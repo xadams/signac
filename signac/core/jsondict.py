@@ -22,7 +22,6 @@ if not six.PY3:
     class UserDict(UD, object):  # noqa
         pass
 
-
 class JSonDict(UserDict):
 
     def __init__(self, filename, synchronized=False, write_concern=False):
@@ -142,3 +141,12 @@ class JSonDict(UserDict):
         if self._synchronized:
             self.load()
         return super(JSonDict, self).__repr__()
+
+    def __enter__(self):
+        if self._synchronized:
+            self.load()
+        return self.data
+
+    def __exit__(self, except_type, except_value, traceback):
+        if self._synchronized:
+            self.save();
