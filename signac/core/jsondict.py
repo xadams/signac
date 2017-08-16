@@ -149,4 +149,4 @@ class JSonDict(UserDict):
 
     def __exit__(self, except_type, except_value, traceback):
         if self._synchronized:
-            self.save();
+            self.save()
