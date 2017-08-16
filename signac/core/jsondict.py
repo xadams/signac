@@ -22,6 +22,7 @@ if not six.PY3:
     class UserDict(UD, object):  # noqa
         pass
 
+
 class JSonDict(UserDict):
 
     def __init__(self, filename, synchronized=False, write_concern=False):
