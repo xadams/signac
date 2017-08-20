@@ -50,9 +50,6 @@ class AttrDict(object):
         if self._cb is not None:
             self._cb(convert_to_dict(self._data))
 
-    def _invalidate(self):
-        super(AttrDict, self).__setattr__('_data_', None)
-
     def _is_valid(self):
         if self._data_ is None:
             raise RuntimeError("Stale!")
