@@ -14,6 +14,7 @@ from ..core.jsondict import JSONDict
 from .hashing import calc_id
 from .utility import _mkdir_p
 from .errors import DestinationExistsError
+from ..sync import sync_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -360,6 +361,55 @@ class Job(object):
         except OSError:
             raise DestinationExistsError(dst)
         self.__dict__.update(dst.__dict__)
+
+    def sync(self, other, strategy=None, exclude=None, doc_sync=None, **kwargs):
+        """Perform a one-way synchronization of this job with the other job.
+
+        By default, this method will synchronize all files and document data with
+        the other job to this job until a synchronization conflict occurs. There
+        are two different kinds of synchronization conflicts:
+
+            1. The two jobs have files with the same, but different content.
+            2. The two jobs have documents that share keys, but those keys are
+               associated with different values.
+
+        A file conflict can be resolved by providing a 'FileSync' *strategy* or by
+        *excluding* files from the synchronization. An unresolvable conflict is indicated with
+        the raise of a :py:class:`~.errors.FileSyncConflict` exception.
+
+        A document synchronization conflict can be resolved by providing a doc_sync function
+        that takes the source and the destination document as first and second argument.
+
+        :param other:
+            The other job to synchronize from.
+        :type other:
+            `.Job`
+        :param strategy:
+            A synchronization strategy for file conflicts. If no strategy is provided, a
+            :class:`~.errors.SyncConflict` exception will be raised upon conflict.
+        :param exclude:
+            An filename exclude pattern. All files matching this pattern will be
+            excluded from synchronization.
+        :type exclude:
+            str
+        :param doc_sync:
+            A synchronization strategy for document keys. If this argument is None, by default
+            no keys will be synchronized upon conflict.
+        :param dry_run:
+            If True, do not actually perform the synchronization.
+        :param kwargs:
+            Extra keyword arguments will be forward to the :py:func:`~.sync.sync_jobs`
+            function which actually excutes the synchronization operation.
+        :raises FileSyncConflict:
+            In case that a file synchronization results in a conflict.
+        """
+        sync_jobs(
+            src=other,
+            dst=self,
+            strategy=strategy,
+            exclude=exclude,
+            doc_sync=doc_sync,
+            **kwargs)
 
     def fn(self, filename):
         """Prepend a filename with the job's workspace directory path.

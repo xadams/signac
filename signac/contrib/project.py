@@ -18,6 +18,7 @@ from .collection import Collection
 from .collection import _traverse_filter
 from ..common import six
 from ..common.config import load_config
+from ..sync import sync_projects
 from .job import Job
 from .hashing import calc_id
 from .indexing import SignacProjectCrawler
@@ -738,7 +739,7 @@ class Project(object):
         :param job: The job to copy into this project.
         :type job: :py:class:`~.Job`
         :returns: The job instance corresponding to the copied job.
-        :rtype: :py:class:`~.Job`
+        :rtype: :class:`~.Job`
         :raises DestinationExistsError:
             In case that a job with the same id is already
             initialized within this project.
@@ -749,9 +750,53 @@ class Project(object):
         except OSError as error:
             if error.errno == errno.EEXIST:
                 raise DestinationExistsError(dst)
+            elif error.errno == errno.ENOENT:
+                raise ValueError("Source job not initalized.")
             else:
                 raise
         return dst
+
+    def sync(self, other, strategy=None, exclude=None, doc_sync=None, selection=None, **kwargs):
+        """Synchronize this project with the other project.
+
+        Try to clone all jobs from the other project to this project.
+        If a job is already part of this project, try to synchronize the job
+        using the optionally specified strategies.
+
+        :param other:
+            The other project to synchronize this project with.
+        :type other:
+            :py:class:`~.Project`
+        :param strategy:
+            A file synchronization strategy.
+        :param exclude:
+            Files with names matching the given pattern will be excluded
+            from the synchronization.
+        :param doc_sync:
+            The function applied for synchronizing documents.
+        :param selection:
+            Only sync the given jobs.
+        :param kwargs:
+            This method accepts the same keyword arguments as the :func:`~.sync.sync_projects`
+            function.
+        :raises DocumentSyncConflict:
+            If there are conflicting keys within the project or job documents that cannot
+            be resolved with the given strategy or if there is no strategy provided.
+        :raises FileSyncConflict:
+            If there are differing files that cannot be resolved with the given strategy
+            or if no strategy is provided.
+        :raises SyncSchemaConflict:
+            In case that the check_schema argument is True and the detected state point
+            schema of this and the other project differ.
+        """
+        return sync_projects(
+            source=other,
+            destination=self,
+            strategy=strategy,
+            exclude=exclude,
+            doc_sync=doc_sync,
+            selection=selection,
+            **kwargs)
 
     def repair(self, fn_statepoints=None, index=None):
         """Attempt to repair the workspace after it got corrupted.
