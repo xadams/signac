@@ -863,8 +863,13 @@ class Collection(object):
         file in *read-only* mode, use ``Collection.open('collection.txt', 'r')``.
         """
         logger.debug("Open collection '{}'.".format(filename))
+        logger.debug("endswith '{}'.".format(filename.endswith('.gz')))
         if filename == ':memory:':
             file = io.StringIO()
+        elif filename.endswith('.gz'):
+            import gzip
+            file = gzip.open(filename, mode)
+            file.seek(0)
         else:
             file = open(filename, mode)
             file.seek(0)
@@ -886,6 +891,7 @@ class Collection(object):
                 logger.debug("Flushed collection.")
             else:
                 logger.debug("Flush collection to file '{}'.".format(self._file))
+                # gzip does not support truncate
                 self._file.truncate(0)
                 self.dump(self._file)
                 self._file.flush()
