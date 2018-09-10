@@ -899,6 +899,12 @@ class Collection(object):
 
         The open-modes work as expected, so for example to open a collection
         file in *read-only* mode, use ``Collection.open('collection.txt', 'r')``.
+
+        Opening a gzip (`*.gz`) file also works as expected. Because gzip does not
+        support a combined read and write mode, `mode=*+` is not available. Be
+        sure to open the file in read, write, or append mode as required. Due to
+        the manner in which gzip works, opening a file in `mode=wt` will
+        effectively erase the current file, so take care using `mode=wt`.
         """
         logger.debug("Open collection '{}'.".format(filename))
         if filename == ':memory:':
@@ -906,15 +912,10 @@ class Collection(object):
         elif filename.endswith('.gz'):
             import gzip
             # adjust for gzip usage; read/write not supported
-            if mode == 'a+':
-                mode = 'at'
+            # explicitly check for supported types
+            if not mode in ['at', 'wt', 'rt', 'xt']:
+                raise RuntimeError("{} not supported. use 'at', 'wt', or 'rt' as required".format(mode))
             logger.debug("opened gzip file in {} mode".format(mode))
-            if mode[0] == 'a':
-                logger.debug("append mode; will only be able to write")
-            elif mode[0] == 'w':
-                logger.debug("write mode; will only be able to write")
-            elif mode[0] == 'r':
-                logger.debug("read mode; will only be able to read")
             file = gzip.open(filename, mode)
             file.seek(0)
         else:
