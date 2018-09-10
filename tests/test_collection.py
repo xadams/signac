@@ -390,24 +390,62 @@ class CollectionTest(unittest.TestCase):
                 self.assertEqual(len(self.c.find({'$not': {'$not': expr}})), expectation)
 
 
-class FileCollectionTestReadOnly(unittest.TestCase):
+class FileCollectionTestTXTReadOnly(unittest.TestCase):
+    mode = 'r'
+    filename = 'test.txt'
 
     def setUp(self):
         self._tmp_dir = TemporaryDirectory(prefix='signac_collection_')
-        self._fn_collection = os.path.join(self._tmp_dir.name, 'test.txt')
+        self._fn_collection = os.path.join(self._tmp_dir.name, self.filename)
         self.addCleanup(self._tmp_dir.cleanup)
         with Collection.open(self._fn_collection, 'w') as c:
             c.update([dict(_id=str(i)) for i in range(10)])
 
     def test_read(self):
-        c = Collection.open(self._fn_collection, mode='r')
+        c = Collection.open(self._fn_collection, mode=self.mode)
         self.assertEqual(len(list(c)), 10)
         self.assertEqual(len(list(c)), 10)
         self.assertEqual(len(c.find()), 10)
         c.close()
 
     def test_write_on_readonly(self):
-        c = Collection.open(self._fn_collection, mode='r')
+        c = Collection.open(self._fn_collection, mode=self.mode)
+        self.assertEqual(len(list(c)), 10)
+        c.insert_one(dict())
+        self.assertEqual(len(list(c)), 11)
+        if six.PY2:
+            with self.assertRaises(IOError):
+                c.flush()
+            with self.assertRaises(IOError):
+                c.close()
+        else:
+            with self.assertRaises(io.UnsupportedOperation):
+                c.flush()
+            with self.assertRaises(io.UnsupportedOperation):
+                c.close()
+        with self.assertRaises(RuntimeError):
+            c.find()
+
+class FileCollectionTestGZReadOnly(unittest.TestCase):
+    mode = 'rt'
+    filename = 'test.txt.gz'
+
+    def setUp(self):
+        self._tmp_dir = TemporaryDirectory(prefix='signac_collection_')
+        self._fn_collection = os.path.join(self._tmp_dir.name, self.filename)
+        self.addCleanup(self._tmp_dir.cleanup)
+        with Collection.open(self._fn_collection, 'wt') as c:
+            c.update([dict(_id=str(i)) for i in range(10)])
+
+    def test_read(self):
+        c = Collection.open(self._fn_collection, mode=self.mode)
+        self.assertEqual(len(list(c)), 10)
+        self.assertEqual(len(list(c)), 10)
+        self.assertEqual(len(c.find()), 10)
+        c.close()
+
+    def test_write_on_readonly(self):
+        c = Collection.open(self._fn_collection, mode=self.mode)
         self.assertEqual(len(list(c)), 10)
         c.insert_one(dict())
         self.assertEqual(len(list(c)), 11)
@@ -425,12 +463,35 @@ class FileCollectionTestReadOnly(unittest.TestCase):
             c.find()
 
 
-class FileCollectionTest(CollectionTest):
+class FileCollectionTestTXT(CollectionTest):
     mode = 'w'
+    filename = 'test.txt'
 
     def setUp(self):
         self._tmp_dir = TemporaryDirectory(prefix='signac_collection_')
-        self._fn_collection = os.path.join(self._tmp_dir.name, 'test.txt')
+        self._fn_collection = os.path.join(self._tmp_dir.name, self.filename)
+        self.addCleanup(self._tmp_dir.cleanup)
+        self.c = Collection.open(self._fn_collection, mode=self.mode)
+        self.addCleanup(self.c.close)
+
+    def test_reopen(self):
+        docs = [dict(_id=str(i)) for i in range(10)]
+
+        with Collection.open(self._fn_collection) as c:
+            c.update(docs)
+
+        with Collection.open(self._fn_collection) as c:
+            self.assertEqual(len(c), len(docs))
+            for doc in self.c:
+                self.assertTrue(doc['_id'] in c)
+
+class FileCollectionTestGZ(CollectionTest):
+    mode = 'wt'
+    filename = 'test.txt'
+
+    def setUp(self):
+        self._tmp_dir = TemporaryDirectory(prefix='signac_collection_')
+        self._fn_collection = os.path.join(self._tmp_dir.name, self.filename)
         self.addCleanup(self._tmp_dir.cleanup)
         self.c = Collection.open(self._fn_collection, mode=self.mode)
         self.addCleanup(self.c.close)
@@ -447,7 +508,7 @@ class FileCollectionTest(CollectionTest):
                 self.assertTrue(doc['_id'] in c)
 
 
-class FileCollectionTestAppendPlus(FileCollectionTest):
+class FileCollectionTestTXTAppendPlus(FileCollectionTestTXT):
     mode = 'a+'
 
     def test_file_size(self):
@@ -466,6 +527,28 @@ class FileCollectionTestAppendPlus(FileCollectionTest):
         with Collection.open(self._fn_collection) as c:
             self.assertEqual(len(c), len(docs))
         with open(self._fn_collection) as f:
+            self.assertEqual(len(list(f)), len(docs))
+
+class FileCollectionTestGZAppend(FileCollectionTestGZ):
+    mode = 'at'
+
+    def test_file_size(self):
+        docs = [dict(_id=str(i)) for i in range(10)]
+
+        with open(self._fn_collection, 'rt') as f:
+            self.assertEqual(len(list(f)), 0)
+        with Collection.open(self._fn_collection) as c:
+            c.update(docs)
+        with open(self._fn_collection, 'rt') as f:
+            self.assertEqual(len(list(f)), len(docs))
+        with Collection.open(self._fn_collection, 'rt') as c:
+            self.assertEqual(len(c), len(docs))
+        with Collection.open(self._fn_collection, 'at') as c:
+            for doc in docs:
+                c.replace_one({'_id': doc['_id']}, doc)
+        with Collection.open(self._fn_collection, 'rt') as c:
+            self.assertEqual(len(c), len(docs))
+        with open(self._fn_collection, 'rt') as f:
             self.assertEqual(len(list(f)), len(docs))
 
 
