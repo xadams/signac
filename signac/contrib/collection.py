@@ -933,7 +933,6 @@ class Collection(object):
         implicitly closed.
         """
         self._assert_open()
-        logger.debug("{}".format(self._file))
         if self._requires_flush:
             if self._file is None:
                 logger.debug("Flushed collection.")
