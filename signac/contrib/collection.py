@@ -913,8 +913,9 @@ class Collection(object):
             import gzip
             # adjust for gzip usage; read/write not supported
             # explicitly check for supported types
-            if not mode in ['at', 'wt', 'rt', 'xt']:
-                raise RuntimeError("{} not supported. use 'at', 'wt', or 'rt' as required".format(mode))
+            if mode not in ['at', 'wt', 'rt', 'xt']:
+                raise RuntimeError("{} not supported. use 'at', 'wt', or \
+                    'rt' as required".format(mode))
             logger.debug("opened gzip file in {} mode".format(mode))
             file = gzip.open(filename, mode)
             file.seek(0)
