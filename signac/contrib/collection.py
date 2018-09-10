@@ -863,11 +863,20 @@ class Collection(object):
         file in *read-only* mode, use ``Collection.open('collection.txt', 'r')``.
         """
         logger.debug("Open collection '{}'.".format(filename))
-        logger.debug("endswith '{}'.".format(filename.endswith('.gz')))
         if filename == ':memory:':
             file = io.StringIO()
         elif filename.endswith('.gz'):
             import gzip
+            # adjust for gzip usage; read/write not supported
+            if mode == 'a+':
+                mode = 'at'
+            logger.debug("opened gzip file in {} mode".format(mode))
+            if mode[0] == 'a':
+                logger.debug("append mode; will only be able to write")
+            elif mode[0] == 'w':
+                logger.debug("write mode; will only be able to write")
+            elif mode[0] == 'r':
+                logger.debug("read mode; will only be able to read")
             file = gzip.open(filename, mode)
             file.seek(0)
         else:
@@ -886,13 +895,15 @@ class Collection(object):
         implicitly closed.
         """
         self._assert_open()
+        logger.debug("{}".format(self._file))
         if self._requires_flush:
             if self._file is None:
                 logger.debug("Flushed collection.")
             else:
                 logger.debug("Flush collection to file '{}'.".format(self._file))
                 # gzip does not support truncate
-                self._file.truncate(0)
+                if not self._file.name.endswith(".gz"):
+                    self._file.truncate(0)
                 self.dump(self._file)
                 self._file.flush()
             self._requires_flush = False
