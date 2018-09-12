@@ -865,7 +865,7 @@ class Collection(object):
         try:
             docs = (json.loads(line) for line in file)
             collection = cls(docs=docs)
-        except (IOError, io.UnsupportedOperation):
+        except (IOError, io.UnsupportedOperation, AttributeError):
             collection = cls()
         collection._file = file
         return collection
