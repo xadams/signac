@@ -307,16 +307,16 @@ class CollectionTest(unittest.TestCase):
         self.assertEqual(self.c.find({'a': {'$near': [10]}}).count(), 1)
         self.assertEqual(self.c.find({'a': {'$near': (10)}}).count(), 1)
         self.assertEqual(self.c.find({'a': {'$near': [10]}}).count(),
-            self.c.find({'a': {'$near': (10)}}).count())
+                         self.c.find({'a': {'$near': (10)}}).count())
         self.assertEqual(self.c.find({'a': {'$near': [10]}}).count(),
-            self.c.find({'a': {'$near': 10}}).count())
+                         self.c.find({'a': {'$near': 10}}).count())
         self.assertEqual(self.c.find({'a': {'$near': [10, 0.5]}}).count(), 16)
         self.assertEqual(self.c.find({'a': {'$near': (10, 0.5)}}).count(), 16)
         self.assertEqual(self.c.find({'a': {'$near': [10, 0.5, 0.0]}}).count(), 16)
         self.assertEqual(self.c.find({'a': {'$near': (10, 0.5, 0.0)}}).count(), 16)
         # increasing abs_tol should increase # of jobs found
         self.assertTrue(self.c.find({'a': {'$near': [10, 0.5, 11]}}).count() >
-            self.c.find({'a': {'$near': [10, 0.5]}}).count())
+                        self.c.find({'a': {'$near': [10, 0.5]}}).count())
         self.assertEqual(self.c.find({'a': {'$near': [10.5, 0.005]}}).count(), 0)
         self.assertEqual(self.c.find({'a': {'$near': (10.5, 0.005)}}).count(), 0)
         # test with lists that are too long
@@ -426,7 +426,8 @@ class FileCollectionTestTXTReadOnly(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             c.find()
 
-class FileCollectionTestGZReadOnly(unittest.TestCase):
+
+class FileCollectionTestGZReadOnly(FileCollectionTestTXTReadOnly):
     mode = 'rt'
     filename = 'test.txt.gz'
 
@@ -437,33 +438,8 @@ class FileCollectionTestGZReadOnly(unittest.TestCase):
         with Collection.open(self._fn_collection, 'wt') as c:
             c.update([dict(_id=str(i)) for i in range(10)])
 
-    def test_read(self):
-        c = Collection.open(self._fn_collection, mode=self.mode)
-        self.assertEqual(len(list(c)), 10)
-        self.assertEqual(len(list(c)), 10)
-        self.assertEqual(len(c.find()), 10)
-        c.close()
 
-    def test_write_on_readonly(self):
-        c = Collection.open(self._fn_collection, mode=self.mode)
-        self.assertEqual(len(list(c)), 10)
-        c.insert_one(dict())
-        self.assertEqual(len(list(c)), 11)
-        if six.PY2:
-            with self.assertRaises(IOError):
-                c.flush()
-            with self.assertRaises(IOError):
-                c.close()
-        else:
-            with self.assertRaises(io.UnsupportedOperation):
-                c.flush()
-            with self.assertRaises(io.UnsupportedOperation):
-                c.close()
-        with self.assertRaises(RuntimeError):
-            c.find()
-
-
-class FileCollectionTestTXT(CollectionTest):
+class FileCollectionTestTXT(unittest.TestCase):
     mode = 'w'
     filename = 'test.txt'
 
@@ -485,27 +461,10 @@ class FileCollectionTestTXT(CollectionTest):
             for doc in self.c:
                 self.assertTrue(doc['_id'] in c)
 
-class FileCollectionTestGZ(CollectionTest):
+
+class FileCollectionTestGZ(FileCollectionTestTXT):
     mode = 'wt'
     filename = 'test.txt'
-
-    def setUp(self):
-        self._tmp_dir = TemporaryDirectory(prefix='signac_collection_')
-        self._fn_collection = os.path.join(self._tmp_dir.name, self.filename)
-        self.addCleanup(self._tmp_dir.cleanup)
-        self.c = Collection.open(self._fn_collection, mode=self.mode)
-        self.addCleanup(self.c.close)
-
-    def test_reopen(self):
-        docs = [dict(_id=str(i)) for i in range(10)]
-
-        with Collection.open(self._fn_collection) as c:
-            c.update(docs)
-
-        with Collection.open(self._fn_collection) as c:
-            self.assertEqual(len(c), len(docs))
-            for doc in self.c:
-                self.assertTrue(doc['_id'] in c)
 
 
 class FileCollectionTestTXTAppendPlus(FileCollectionTestTXT):
@@ -528,6 +487,7 @@ class FileCollectionTestTXTAppendPlus(FileCollectionTestTXT):
             self.assertEqual(len(c), len(docs))
         with open(self._fn_collection) as f:
             self.assertEqual(len(list(f)), len(docs))
+
 
 class FileCollectionTestGZAppend(FileCollectionTestGZ):
     mode = 'at'

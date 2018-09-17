@@ -865,8 +865,15 @@ class Collection(object):
         try:
             docs = (json.loads(line) for line in file)
             collection = cls(docs=docs)
-        except (IOError, io.UnsupportedOperation, AttributeError):
+        except (IOError, io.UnsupportedOperation):
             collection = cls()
+        except AttributeError as e:
+            # This error occurs in python27 and has been evaluated as being
+            # fine to accept in this manner
+            if str(e) == "'GzipFile' object has no attribute 'extrastart'":
+                collection = cls()
+            else:
+                raise AttributeError(e)
         collection._file = file
         return collection
 
