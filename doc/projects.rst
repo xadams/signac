@@ -648,14 +648,14 @@ Note that in this case the parameter *b* is ignored for the creation of the link
 
 .. important::
 
-    When the project data space is changed by adding or removing jobs, simply update the view, by executing :py:meth:`~.Project.create_linked_view` or ``signac view`` for the same view directory again.
+    When the project data space is changed by adding or removing jobs, simply update the view by executing :py:meth:`~.Project.create_linked_view` or ``signac view`` for the same view directory again.
 
 You can limit the *linked view* to a specific data subset by providing a set of *job ids* to the :py:meth:`~.Project.create_linked_view` method.
-This works similar for ``$ signac view`` on the command line, for example, in combination with ``signac find`` (using the `-j` option to explicitly specify which jobs to include in the view):
+This can be accomplished on the command line using the ``signac view`` command, which directly accepts the same filters as ``signac find``:
 
 .. code-block:: bash
 
-    $ signac find '{"a": 0}' | xargs signac view my_view -j
+    $ signac view -f '{"a": 0}'
 
 .. tip::
 
@@ -696,8 +696,10 @@ Importing and Exporting Data
 ============================
 
 Data archival is important to preserving the integrity, utility, and shareability of a project.
-To this end, signac provides interfaces for importing workspaces from and exporting workspaces to directories, zip-files, and tarballs.
-The exported project archives are useful for publishing data, *e.g.*, for researchers wishing to make an original data set available alongside a publication.
+To this end, **signac** provides interfaces for importing workspaces from and exporting workspaces to directories and archives.
+The exported project archives are useful for publishing data.
+For example researchers wishing to make an original data set available alongside a publication could export a **signac** data space.
+This data set could then be easily imported and used by someone else to verify the data or perform a follow-up study.
 
 Exporting
 ---------
@@ -729,7 +731,7 @@ The default path function is based on the implicit schema of all exported jobs, 
 
     $ signac export /data/my_project_archive "a_{job.sp.a}/b_{job.sp.b}"
 
-It is possible to directly export to a zip-file or tarball by simply providing the path to the archive-file as target (*e.g.* ``$ signac export /data/my_project_archive.zip``).
+It is possible to directly export to a zip-file or tarball by simply providing the path to the archive-file as the target (*e.g.* ``$ signac export /data/my_project_archive.zip``).
 For more details on how to use ``signac export``, type ``$ signac export --help``.
 
 .. note::
@@ -769,7 +771,7 @@ The command above will copy all data from the the ``/data/non_signac_archive`` d
 For example, the path ``a_0/b_1`` will be interpreted as ``{'a': 0, 'b': 1}``.
 The type specification -- here ``int`` for both *a* and *b* -- is optional and will default to ``str`` if omitted.
 
-Importing from zip-files and tarballs works similarly, by specifying that path as the origin.
+Importing from zip-files and tarballs works similarly by specifying that path as the origin.
 For more details on how to use ``signac import``, type ``$ signac import --help``.
 
 .. note::
