@@ -2,6 +2,8 @@ import os
 import io
 import warnings
 import unittest
+from collections import OrderedDict
+from itertools import islice
 
 from signac import Collection
 from signac.common import six
@@ -59,6 +61,36 @@ class CollectionTest(unittest.TestCase):
     def test_init(self):
         self.assertEqual(len(self.c), 0)
 
+    def test_init_with_list_with_ids_sequential(self):
+        docs = [{'a': i, '_id': str(i)} for i in range(10)]
+        self.c = Collection(docs)
+        self.assertEqual(len(self.c), len(docs))
+        for doc in docs:
+            self.assertIn(doc['_id'], self.c)
+
+    def test_init_with_list_with_ids_non_sequential(self):
+        docs = [{'a': i, '_id': '{:032d}'.format(i**3)} for i in range(10)]
+        self.c = Collection(docs)
+        self.assertEqual(len(self.c), len(docs))
+        for doc in docs:
+            self.assertIn(doc['_id'], self.c)
+
+    def test_init_with_list_without_ids(self):
+        docs = [{'a': i} for i in range(10)]
+        self.c = Collection(docs)
+        self.assertEqual(len(self.c), len(docs))
+        for doc in docs:
+            self.assertIn(doc['_id'], self.c)
+
+    def test_init_with_list_with_and_without_ids(self):
+        docs = [{'a': i} for i in range(10)]
+        for i, doc in enumerate(islice(docs, 5)):
+            doc.setdefault('_id', str(i))
+        self.c = Collection(docs)
+        self.assertEqual(len(self.c), len(docs))
+        for doc in docs:
+            self.assertIn(doc['_id'], self.c)
+
     def test_insert(self):
         doc = dict(a=0)
         self.c['0'] = doc
@@ -71,6 +103,24 @@ class CollectionTest(unittest.TestCase):
             self.c[0] = dict(a=0)
         with self.assertRaises(TypeError):
             self.c[1.0] = dict(a=0)
+
+    def test_insert_multiple(self):
+        doc = dict(a=0)
+        self.assertEqual(len(self.c), 0)
+        self.c.insert_one(doc.copy())
+        self.assertEqual(len(self.c), 1)
+        self.c.insert_one(doc.copy())
+        self.assertEqual(len(self.c), 2)
+
+    def test_int_float_equality(self):
+        self.c.insert_one(dict(a=1))
+        self.c.insert_one(dict(a=1.0))
+        self.assertEqual(len(self.c.find(dict(a=1))), 1)
+        self.assertEqual(len(self.c.find(dict(a=1.0))), 1)
+        for doc in self.c.find(dict(a=1)):
+            self.assertEqual(type(doc['a']), int)
+        for doc in self.c.find(dict(a=1.0)):
+            self.assertEqual(type(doc['a']), float)
 
     def test_copy(self):
         docs = [dict(_id=str(i)) for i in range(10)]
@@ -283,6 +333,57 @@ class CollectionTest(unittest.TestCase):
         self.c.delete_one({})
         self.assertEqual(len(self.c), len(docs) - 2)
 
+    def test_find_exists_operator(self):
+        self.assertEqual(len(self.c), 0)
+        data = OrderedDict((
+            ('a', True),
+            ('b', 'b'),
+            ('c', 0),
+            ('d', 0.1),
+            ('e', dict(a=0)),
+            ('f', dict(a='b')),
+            ('g', [0, 'a', True])))
+
+        # Test without data
+        for key in data:
+            self.assertEqual(len(self.c.find({key: {'$exists': False}})), len(self.c))
+            self.assertEqual(len(self.c.find({key: {'$exists': True}})), 0)
+            self.assertEqual(len(self.c.find({'{}.$exists'.format(key): False})), len(self.c))
+            self.assertEqual(len(self.c.find({'{}.$exists'.format(key): True})), 0)
+
+        # Test for nested cases
+        self.assertEqual(len(self.c.find({'e.a.$exists': True})), 0)
+        self.assertEqual(len(self.c.find({'e.a.$exists': False})), 0)
+        self.assertEqual(len(self.c.find({'e.a': {'$exists': True}})), 0)
+        self.assertEqual(len(self.c.find({'e.a': {'$exists': False}})), 0)
+        self.assertEqual(len(self.c.find({'f.a.$exists': True})), 0)
+        self.assertEqual(len(self.c.find({'f.a.$exists': False})), 0)
+        self.assertEqual(len(self.c.find({'f.a': {'$exists': True}})), 0)
+        self.assertEqual(len(self.c.find({'f.a': {'$exists': False}})), 0)
+
+        # Test with data
+        for key, value in data.items():
+            self.c.insert_one({key: value})
+        self.c.insert_one({'e': -1})  # heterogeneous nesting
+
+        for key in data:
+            n = 2 if key == 'e' else 1
+            self.assertEqual(len(self.c.find({key: {'$exists': False}})), len(self.c) - n)
+            self.assertEqual(len(self.c.find({key: {'$exists': True}})), n)
+            self.assertEqual(len(self.c.find({'{}.$exists'.format(key): False})), len(self.c) - n)
+            self.assertEqual(len(self.c.find({'{}.$exists'.format(key): True})), n)
+
+        # Test for nested cases
+        self.assertEqual(len(self.c.find({'e.$exists': True})), 2)
+        self.assertEqual(len(self.c.find({'e.a.$exists': True})), 1)
+        self.assertEqual(len(self.c.find({'e.a.$exists': False})), len(self.c) - 1)
+        self.assertEqual(len(self.c.find({'e.a': {'$exists': True}})), 1)
+        self.assertEqual(len(self.c.find({'e.a': {'$exists': False}})), len(self.c) - 1)
+        self.assertEqual(len(self.c.find({'f.a.$exists': True})), 1)
+        self.assertEqual(len(self.c.find({'f.a.$exists': False})), len(self.c) - 1)
+        self.assertEqual(len(self.c.find({'f.a': {'$exists': True}})), 1)
+        self.assertEqual(len(self.c.find({'f.a': {'$exists': False}})), len(self.c) - 1)
+
     def test_find_arithmetic_operators(self):
         self.assertEqual(len(self.c), 0)
         for expr, n in ARITHMETIC_EXPRESSIONS:
@@ -307,16 +408,16 @@ class CollectionTest(unittest.TestCase):
         self.assertEqual(self.c.find({'a': {'$near': [10]}}).count(), 1)
         self.assertEqual(self.c.find({'a': {'$near': (10)}}).count(), 1)
         self.assertEqual(self.c.find({'a': {'$near': [10]}}).count(),
-                         self.c.find({'a': {'$near': (10)}}).count())
+            self.c.find({'a': {'$near': (10)}}).count())
         self.assertEqual(self.c.find({'a': {'$near': [10]}}).count(),
-                         self.c.find({'a': {'$near': 10}}).count())
+            self.c.find({'a': {'$near': 10}}).count())
         self.assertEqual(self.c.find({'a': {'$near': [10, 0.5]}}).count(), 16)
         self.assertEqual(self.c.find({'a': {'$near': (10, 0.5)}}).count(), 16)
         self.assertEqual(self.c.find({'a': {'$near': [10, 0.5, 0.0]}}).count(), 16)
         self.assertEqual(self.c.find({'a': {'$near': (10, 0.5, 0.0)}}).count(), 16)
         # increasing abs_tol should increase # of jobs found
-        self.assertTrue(self.c.find({'a': {'$near': [10, 0.5, 11]}}).count() >
-                        self.c.find({'a': {'$near': [10, 0.5]}}).count())
+        self.assertGreater(self.c.find({'a': {'$near': [10, 0.5, 11]}}).count(),
+                           self.c.find({'a': {'$near': [10, 0.5]}}).count())
         self.assertEqual(self.c.find({'a': {'$near': [10.5, 0.005]}}).count(), 0)
         self.assertEqual(self.c.find({'a': {'$near': (10.5, 0.005)}}).count(), 0)
         # test with lists that are too long
@@ -390,26 +491,24 @@ class CollectionTest(unittest.TestCase):
                 self.assertEqual(len(self.c.find({'$not': {'$not': expr}})), expectation)
 
 
-class FileCollectionTestTXTReadOnly(unittest.TestCase):
-    mode = 'r'
-    filename = 'test.txt'
+class FileCollectionTestReadOnly(unittest.TestCase):
 
     def setUp(self):
         self._tmp_dir = TemporaryDirectory(prefix='signac_collection_')
-        self._fn_collection = os.path.join(self._tmp_dir.name, self.filename)
+        self._fn_collection = os.path.join(self._tmp_dir.name, 'test.txt')
         self.addCleanup(self._tmp_dir.cleanup)
         with Collection.open(self._fn_collection, 'w') as c:
             c.update([dict(_id=str(i)) for i in range(10)])
 
     def test_read(self):
-        c = Collection.open(self._fn_collection, mode=self.mode)
+        c = Collection.open(self._fn_collection, mode='r')
         self.assertEqual(len(list(c)), 10)
         self.assertEqual(len(list(c)), 10)
         self.assertEqual(len(c.find()), 10)
         c.close()
 
     def test_write_on_readonly(self):
-        c = Collection.open(self._fn_collection, mode=self.mode)
+        c = Collection.open(self._fn_collection, mode='r')
         self.assertEqual(len(list(c)), 10)
         c.insert_one(dict())
         self.assertEqual(len(list(c)), 11)
@@ -427,25 +526,13 @@ class FileCollectionTestTXTReadOnly(unittest.TestCase):
             c.find()
 
 
-class FileCollectionTestGZReadOnly(FileCollectionTestTXTReadOnly):
-    mode = 'rt'
-    filename = 'test.txt.gz'
-
-    def setUp(self):
-        self._tmp_dir = TemporaryDirectory(prefix='signac_collection_')
-        self._fn_collection = os.path.join(self._tmp_dir.name, self.filename)
-        self.addCleanup(self._tmp_dir.cleanup)
-        with Collection.open(self._fn_collection, 'wt') as c:
-            c.update([dict(_id=str(i)) for i in range(10)])
-
-
-class FileCollectionTestTXT(unittest.TestCase):
+class FileCollectionTest(CollectionTest):
     mode = 'w'
     filename = 'test.txt'
 
     def setUp(self):
         self._tmp_dir = TemporaryDirectory(prefix='signac_collection_')
-        self._fn_collection = os.path.join(self._tmp_dir.name, self.filename)
+        self._fn_collection = os.path.join(self._tmp_dir.name, 'test.txt')
         self.addCleanup(self._tmp_dir.cleanup)
         self.c = Collection.open(self._fn_collection, mode=self.mode)
         self.addCleanup(self.c.close)
@@ -462,12 +549,7 @@ class FileCollectionTestTXT(unittest.TestCase):
                 self.assertTrue(doc['_id'] in c)
 
 
-class FileCollectionTestGZ(FileCollectionTestTXT):
-    mode = 'wt'
-    filename = 'test.txt'
-
-
-class FileCollectionTestTXTAppendPlus(FileCollectionTestTXT):
+class FileCollectionTestAppendPlus(FileCollectionTest):
     mode = 'a+'
 
     def test_file_size(self):

@@ -8,12 +8,11 @@ import re
 import logging
 import warnings
 import errno
-import collections
 import uuid
 import gzip
 import time
 from contextlib import contextmanager
-from itertools import chain, groupby
+from itertools import groupby
 from multiprocessing.pool import ThreadPool
 
 from .. import syncutil
@@ -34,9 +33,9 @@ from .errors import WorkspaceError
 from .errors import DestinationExistsError
 from .errors import JobsCorruptedError
 if six.PY2:
-    from collections import Mapping
+    from collections import Mapping, Iterable
 else:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -104,13 +103,13 @@ class JobSearchIndex(object):
         :raises RuntimeError: If the filters are not supported
             by the index.
         """
-        if filter is None:
-            f = dict()
-        else:
-            f = dict(self._resolve_statepoint_filter(filter))
-        if doc_filter is not None:
-            f.update(doc_filter)
-        return self._collection._find(f)
+        if filter:
+            filter = dict(self._resolve_statepoint_filter(filter))
+            if doc_filter:
+                filter.update(doc_filter)
+        elif doc_filter:
+            filter = doc_filter
+        return self._collection._find(filter)
 
 
 class Project(object):
@@ -157,10 +156,8 @@ class Project(object):
     def __repr__(self):
         return "{type}({{'project': '{id}', 'project_dir': '{rd}',"\
                " 'workspace_dir': '{wd}'}})".format(
-                    type=self.__class__.__module__ + '.' + self.__class__.__name__,
-                    id=self.get_id(),
-                    rd=self.root_directory(),
-                    wd=self.workspace())
+                   type=self.__class__.__module__ + '.' + self.__class__.__name__,
+                   id=self.get_id(), rd=self.root_directory(), wd=self.workspace())
 
     def __eq__(self, other):
         return repr(self) == repr(other)
@@ -320,8 +317,16 @@ class Project(object):
             raise ValueError(
                 "You need to either provide the statepoint or the id.")
         if id is None:
+            # second best case
             job = self.Job(project=self, statepoint=statepoint)
+            if job._id not in self._sp_cache:
+                self._sp_cache[job._id] = dict(job._statepoint)
+            return job
+        elif id in self._sp_cache:
+            # optimal case
+            return self.Job(project=self, statepoint=self._sp_cache[id], _id=id)
         else:
+            # worst case (no statepoint and cache miss)
             if len(id) < 32:
                 job_ids = self.find_job_ids()
                 matches = [_id for _id in job_ids if _id.startswith(id)]
@@ -329,10 +334,7 @@ class Project(object):
                     id = matches[0]
                 elif len(matches) > 1:
                     raise LookupError(id)
-            job = self.Job(project=self, statepoint=self.get_statepoint(id), _trust=True)
-        if job.get_id() not in self._sp_cache:
-            self._register(job)
-        return job
+            return self.Job(project=self, statepoint=self.get_statepoint(id), _id=id)
 
     def _job_dirs(self):
         try:
@@ -356,7 +358,12 @@ class Project(object):
 
     def num_jobs(self):
         "Return the number of initialized jobs."
-        return len(list(self._job_dirs()))
+        # We simply count the the number of valid directories and avoid building a list
+        # for improved performance.
+        i = 0
+        for i, _ in enumerate(self._job_dirs(), 1):
+            pass
+        return i
 
     __len__ = num_jobs
 
@@ -481,7 +488,9 @@ class Project(object):
                 index = self._sp_index()
             else:
                 index = self.index(include_job_document=True)
-        search_index = self.build_job_search_index(index, _trust=True)
+            search_index = JobSearchIndex(index, _trust=True)
+        else:
+            search_index = JobSearchIndex(index)
         return search_index.find_job_ids(filter=filter, doc_filter=doc_filter)
 
     def find_jobs(self, filter=None, doc_filter=None, index=None):
@@ -742,34 +751,42 @@ class Project(object):
         self._sp_cache[jobid] = sp
         return sp
 
-    def create_linked_view(self, prefix=None, job_ids=None, index=None):
+    def create_linked_view(self, prefix=None, job_ids=None, index=None, path=None):
         """Create or update a persistent linked view of the selected data space.
 
-        This method determines unique paths for each job based on the job's
-        statepoint and creates symbolic links to the associated workspace
-        directories. This is useful for browsing through the data space in a
-        human-readable manner.
+        Similar to :meth:`~.export_to`, this function expands the data space for the selected
+        jobs, but instead of copying data will create symbolic links to the individual job
+        workspace directories. This is primarily uselful for browsing through the data
+        space using a file-browser with human-interpretable directory paths.
 
-        Assuming that the parameter space is
+        By default, the paths of the view will be based on variable state point keys as part
+        of the *implicit* schema of the selected jobs that we create the view for. For example,
+        creating a linked view for a data space with schema
 
-            * a=0, b=0
-            * a=1, b=0
-            * a=2, b=0
-            * ...,
+        .. code-block:: python
 
-        where *b* does not vary over all statepoints, this method will create
-        the following *symbolic links* within the specified view prefix:
+            >>> print(project.detect_schema())
+            {
+             'foo': 'int([0, 1, 2, ..., 8, 9], 10)',
+            }
+
+        by calling ``project.create_linked_view('my_view')`` will look similar to:
 
         .. code-block:: bash
 
-            view/a/0/job -> /path/to/workspace/7f9fb369851609ce9cb91404549393f3
-            view/a/1/job -> /path/to/workspace/017d53deb17a290d8b0d2ae02fa8bd9d
+            my_view/foo/0/job -> workspace/b8fcc6b8f99c56509eb65568922e88b8
+            my_view/foo/1/job -> workspace/b6cd26b873ae3624653c9268deff4485
             ...
+
+        It is possible to control the paths using the ``path`` argument, which behaves in
+        the exact same manner as the equivalent argument for :meth:`~.Project.export_to`.
 
         .. note::
 
-            To maximize the compactness of each view path, *b* which does not
-            vary over the selected data space, is ignored.
+            The behavior of this function is almost equivalent to
+            ``project.export_to('my_view', copytree=os.symlink)`` with the major difference,
+            that view hierarchies are actually *updated*, that means no longer valid links
+            are automatically removed.
 
         :param prefix:
             The path where the linked view will be created or updated.
@@ -780,40 +797,14 @@ class Project(object):
             otherwise only for the sub space constituted by the provided job ids.
         :param index:
             A document index.
+        :param path:
+            The path (function) used to structure the linked data space.
+        :returns:
+            A dict that maps the source directory paths, to the linked
+            directory paths.
         """
-        if prefix is None:
-            prefix = 'view'
-
-        if index is None:
-            if job_ids is None:
-                index = [{'_id': job._id, 'statepoint': job.sp()} for job in self]
-            else:
-                index = [{'_id': job_id, 'statepoint': self.open_job(id=job_id).sp()}
-                         for job_id in job_ids]
-        elif job_ids is not None:
-            if not isinstance(job_ids, set):
-                job_ids = set(job_ids)
-            index = [doc for doc in index if doc['_id'] in job_ids]
-            if not job_ids.issubset({doc['_id'] for doc in index}):
-                raise ValueError("Insufficient index for selected data space.")
-
-        jsi = self.build_job_statepoint_index(exclude_const=True, index=index)
-        sp_index = collections.OrderedDict(jsi)
-        tmp = collections.defaultdict(list)
-        for key, values in sp_index.items():
-            for value, group in values.items():
-                p = '_'.join(str(_) for _ in (key + (value, )))
-                for job_id in group:
-                    tmp[job_id].append(p)
-        links = dict()
-        for job_id, p in tmp.items():
-            path = os.path.join(* p + ['job'])
-            links[path] = self.open_job(id=job_id).workspace()
-        if not links:   # data space contains less than two elements
-            for job in self.find_jobs():
-                links['./job'] = job.workspace()
-            assert len(links) < 2
-        _update_view(prefix, links)
+        from .linked_view import create_linked_view
+        return create_linked_view(self, prefix, job_ids, index, path)
 
     def find_job_documents(self, filter=None):
         """Find all job documents in the project's workspace.
@@ -960,7 +951,7 @@ class Project(object):
             **kwargs)
 
     def export_to(self, target, path=None, copytree=None):
-        """Export all jobs to a target location, such as a directory or a (zipped) archive file.
+        """Export all jobs to a target location, such as a directory or a (compressed) archive file.
 
         Use this function in combination with :meth:`~.find_jobs` to export only a select number
         of jobs, for example:
@@ -969,14 +960,57 @@ class Project(object):
 
             project.find_jobs({'foo': 0}).export_to('foo_0.tar')
 
-        .. seealso:: Import data spaces with :meth:`~.import_from`.
+        The ``path`` argument enables users to control how exactly the exported data space is to be
+        expanded. By default, the path-function will be based on the *implicit* schema of the
+        exported jobs. For example, exporting jobs that all differ by a state point key *foo* with
+        ``project.export_to('data/')``, the exported directory structure could look like this:
+
+        .. code-block:: bash
+
+            data/foo/0
+            data/foo/1
+            ...
+
+        That would be equivalent to specifying ``path=lambda job: os.path.join('foo', job.sp.foo)``.
+
+        Instead of a function, we can also provide a string, where fields for state point keys
+        are automatically formatted. For example, the following two path arguments are equivalent:
+        "foo/{foo}" and "foo/{job.sp.foo}".
+
+        Any attribute of job can be used as a field here, so ``job.doc.bar``,
+        ``job._id``, and ``job.ws`` can also be used as path fields.
+
+        A special ``{{auto}}`` field allows us to expand the path automatically with state point
+        keys that have not been specified explicitly. So, for example, one can provide
+        ``path="foo/{foo}/{{auto}}"`` to specify that the path shall begin with ``foo/{foo}/``,
+        but is then automatically expanded with all other state point key-value pairs. How
+        key-value pairs are concatenated can be controlled *via* the format-specifier, so for
+        example, ``path="{{auto:_}}"`` will generate a structure such as
+
+        .. code-block:: bash
+
+            data/foo_0
+            data/foo_1
+            ...
+
+        Finally, providing ``path=False`` is equivalent to ``path="{job._id}"``.
+
+        .. seealso::
+
+            Previously exported or non-signac data spaces can be imported
+            with :meth:`~.import_from`.
 
         :param target:
-            A path to a directory to export to. The directory can not
-            already exist.
+            A path to a directory to export to. The target can not already exist.
+            Besides directories, possible targets are tar-files (`.tar`), gzipped tar-files
+            (`.tar.gz`), zip-files (`.zip`), bzip2-compressed files (`.bz2`),
+            and xz-compressed files (`.xz`).
         :param path:
-            The path function for export, must be a function of job or
-            a string, which is evaluated with ``path.format(job=job)``.
+            The path (function) used to structure the exported data space.
+            This argument must either be a callable which returns a path (str) as a function
+            of `job`, a string where fields are replaced using the job-state point dictionary,
+            or `False`, which means that we just use the job-id as path.
+            Defaults to the equivalent of ``{{auto}}``.
         :param copytree:
             The function used for the actualy copying of directory tree
             structures. Defaults to :func:`shutil.copytree`.
@@ -993,8 +1027,10 @@ class Project(object):
         This function will walk through the data space located at origin and will try to identify
         data space paths that can be imported as a job workspace into this project.
 
-        The default schema function will simply look for state point manifest files -- usually named
-        ``signac_statepoint.json`` -- and then import all data located within that path into the job
+        The ``schema`` argument expects a function that takes a path argument and returns a state
+        point dictionary. A default function is used when no argument is provided.
+        The default schema function will simply look for state point manifest files--usually named
+        ``signac_statepoint.json``--and then import all data located within that path into the job
         workspace corresponding to the state point specified in the manifest file.
 
         Alternatively the schema argument may be a string, that is converted into a schema function,
@@ -1154,10 +1190,9 @@ class Project(object):
 
     def _build_index(self, include_job_document=False):
         "Return a basic state point index."
-        wd = self.workspace() if self.Job == Job else None
+        wd = self.workspace() if self.Job is Job else None
         for _id in self.find_job_ids():
-            sp = self.get_statepoint(_id)
-            doc = dict(_id=_id, statepoint=sp)
+            doc = dict(_id=_id, statepoint=self.get_statepoint(_id))
             if include_job_document:
                 if wd is None:
                     doc.update(self.open_job(id=_id).document)
@@ -1272,7 +1307,7 @@ class Project(object):
 
     def index(self, formats=None, depth=0,
               skip_errors=False, include_job_document=True):
-        """Generate an index of the project's workspace.
+        r"""Generate an index of the project's workspace.
 
         This generator function indexes every file in the project's
         workspace until the specified `depth`.
@@ -1281,7 +1316,7 @@ class Project(object):
 
         .. code-block:: python
 
-            for doc in project.index({'.*\.txt', 'TextFile'}):
+            for doc in project.index({r'.*\.txt', 'TextFile'}):
                 print(doc)
 
         :param formats: The format definitions as mapping.
@@ -1486,141 +1521,6 @@ def TemporaryProject(name=None, **kwargs):
         yield Project.init_project(name=name, root=tmp_dir)
 
 
-def _find_all_links(root, leaf='job'):
-    for dirpath, dirnames, filenames in os.walk(root):
-        for dirname in dirnames:
-            if dirname == leaf:
-                yield os.path.relpath(dirpath, root)
-                break
-        for filename in filenames:
-            if filename == leaf:
-                yield os.path.relpath(dirpath, root)
-                break
-
-
-class _Node(object):
-
-    def __init__(self, name=None, value=None):
-        self.name = name
-        self.value = value
-        self.children = dict()
-
-    def get_child(self, name):
-        return self.children.setdefault(name, type(self)(name))
-
-    def __str__(self):
-        return "_Node({}, {})".format(self.name, self.value)
-
-    __repr__ = __str__
-
-
-def _build_tree(paths):
-    root = _Node()
-    for path in paths:
-        node = root
-        for p in path.split(os.sep):
-            node = node.get_child(p)
-    return root
-
-
-def _get_branches(root, branch=None):
-    if branch is None:
-        branch = list()
-    else:
-        branch = list(branch) + [root]
-    if root.children:
-        for child in root.children.values():
-            for b in _get_branches(child, branch):
-                yield b
-    else:
-        yield branch
-
-
-def _color_path(root, path):
-    root.value = True
-    for name in path:
-        root = root.get_child(name)
-        root.value = True
-
-
-def _find_dead_branches(root, branch=None):
-    if branch is None:
-        branch = list()
-    else:
-        branch = list(branch) + [root]
-    if root.children:
-        for child in root.children.values():
-            for b in _find_dead_branches(child, branch):
-                yield b
-    if not root.value:
-        yield branch
-
-
-def _analyze_view(prefix, links, leaf='job'):
-    logger.info("Analyzing view prefix '{}'...".format(prefix))
-    existing_paths = {os.path.join(p, leaf) for p in _find_all_links(prefix, leaf)}
-    existing_tree = _build_tree(existing_paths)
-    for path in links:
-        _color_path(existing_tree, path.split(os.sep))
-    obsolete = []
-    dead_branches = _find_dead_branches(existing_tree)
-    for branch in reversed(sorted(dead_branches, key=lambda b: len(b))):
-        if branch:
-            obsolete.append(os.path.join(* (n.name for n in branch)))
-    if '.' in obsolete:
-        obsolete.remove('.')
-    keep_or_update = existing_paths.intersection(links.keys())
-    new = set(links.keys()).difference(keep_or_update)
-    to_update = [p for p in keep_or_update if
-                 os.path.realpath(os.path.join(prefix, p)) != links[p]]
-    return obsolete, to_update, new
-
-
-def _update_view(prefix, links, leaf='job'):
-    obsolete, to_update, new = _analyze_view(prefix, links)
-    num_ops = len(obsolete) + 2 * len(to_update) + len(new)
-    if num_ops:
-        logger.info("Generating current view in '{}' ({} operations)...".format(
-            prefix, num_ops))
-    else:
-        logger.info("View in '{}' is up to date.".format(prefix))
-        return
-    logger.debug("Removing {} obsolete links.".format(len(obsolete)))
-    for path in obsolete:
-        p = os.path.join(prefix, path)
-        try:
-            os.unlink(p)
-        except OSError:
-            os.rmdir(p)
-    logger.debug("Creating {} new and updating {} existing links.".format(
-        len(new), len(to_update)))
-    for path in to_update:
-        os.unlink(os.path.join(prefix, path))
-    for path in chain(new, to_update):
-        dst = os.path.join(prefix, path)
-        src = os.path.relpath(links[path], os.path.split(dst)[0])
-        _make_link(src, dst)
-
-
-def _make_link(src, dst):
-    try:
-        os.makedirs(os.path.dirname(dst))
-    # except FileExistsError:
-    except OSError as error:
-        if error.errno != errno.EEXIST:
-            raise
-    try:
-        if six.PY2:
-            os.symlink(src, dst)
-        else:
-            os.symlink(src, dst, target_is_directory=True)
-    except OSError as error:
-        if error.errno == errno.EEXIST:
-            if os.path.realpath(src) == os.path.realpath(dst):
-                return
-        raise
-
-
 def _skip_errors(iterable, log=print):
     while True:
         try:
@@ -1657,14 +1557,22 @@ class JobsCursor(object):
         self._filter = filter
         self._doc_filter = doc_filter
 
-    def _find_ids(self):
-        return self._project.find_job_ids(self._filter, self._doc_filter)
-
     def __len__(self):
-        return len(self._find_ids())
+        # Highly performance critical code path!!
+        if self._filter or self._doc_filter:
+            # We use the standard function for determining job ids if and only if
+            # any of the two filter is provided.
+            return len(self._project.find_job_ids(self._filter, self._doc_filter))
+        else:
+            # Without filter we can simply return the length of the whole project.
+            return self._project.__len__()
 
     def __iter__(self):
-        return _JobsCursorIterator(self._project, self._find_ids())
+        # Code duplication here for improved performance.
+        return _JobsCursorIterator(
+            self._project,
+            self._project.find_job_ids(self._filter, self._doc_filter),
+            )
 
     def groupby(self, key=None, default=None):
         """Groups jobs according to one or more statepoint parameters.
@@ -1709,7 +1617,7 @@ class JobsCursor(object):
                 def keyfunction(job):
                     return job.sp.get(key, default)
 
-        elif isinstance(key, collections.Iterable):
+        elif isinstance(key, Iterable):
             if default is None:
                 def keyfunction(job):
                     return tuple(job.sp[k] for k in key)
@@ -1767,7 +1675,7 @@ class JobsCursor(object):
             else:
                 def keyfunction(job):
                     return job.document.get(key, default)
-        elif isinstance(key, collections.Iterable):
+        elif isinstance(key, Iterable):
             if default is None:
                 def keyfunction(job):
                     return tuple(job.document[k] for k in key)
@@ -1787,24 +1695,11 @@ class JobsCursor(object):
     def export_to(self, target, path=None, copytree=None):
         """Export all jobs to a target location, such as a directory or a (zipped) archive file.
 
-        .. seealso:: Import data spaces with :meth:`~.import_from`.
-
-        :param target:
-            A path to a directory to export to. The directory can not
-            already exist.
-        :param path:
-            The path function for export, must be a function of job or
-            a string, which is evaluated with `path.format(job=job)`.
-        :param copytree:
-            The function used for the actualy copying of directory tree
-            structures. Defaults to `shutil.copytree`.
-            Can only be used when the target is a directory.
-        :returns:
-            A dict that maps the source directory paths, to the target
-            directory paths.
+        See help(signac.Project.export_to) for full details on how to use this function.
         """
         from .import_export import export_jobs
-        return dict(export_jobs(jobs=list(self), target=target, path=path, copytree=copytree))
+        return dict(export_jobs(jobs=list(self), target=target,
+                                path=path, copytree=copytree))
 
 
 def init_project(name, root=None, workspace=None, make_dir=True):

@@ -50,13 +50,14 @@ class Job(object):
     FN_DOCUMENT = 'signac_job_document.json'
     "The job's document filename."
 
-    def __init__(self, project, statepoint, _trust=False):
+    def __init__(self, project, statepoint, _id=None):
         self._project = project
-        if _trust:
-            self._statepoint = dict(statepoint)
-        else:
+        if _id is None:
             self._statepoint = json.loads(json.dumps(statepoint))
-        self._id = calc_id(self._statepoint)
+            self._id = calc_id(self._statepoint)
+        else:
+            self._statepoint = dict(statepoint)
+            self._id = _id
         self._sp = SyncedAttrDict(self._statepoint, parent=_sp_save_hook(self))
         self._wd = os.path.join(project.workspace(), self._id)
         self._fn_doc = os.path.join(self._wd, self.FN_DOCUMENT)
@@ -135,16 +136,15 @@ class Job(object):
                 pass  # job is not initialized
             else:
                 raise
-        else:
-            # Update this instance
-            self._statepoint = dst._statepoint
-            self._id = dst._id
-            self._sp = SyncedAttrDict(self._statepoint, parent=_sp_save_hook(self))
-            self._wd = dst._wd
-            self._fn_doc = dst._fn_doc
-            self._document = None
-            self._cwd = list()
-            logger.info("Moved '{}' -> '{}'.".format(self, dst))
+        # Update this instance
+        self._statepoint = dst._statepoint
+        self._id = dst._id
+        self._sp = SyncedAttrDict(self._statepoint, parent=_sp_save_hook(self))
+        self._wd = dst._wd
+        self._fn_doc = dst._fn_doc
+        self._document = None
+        self._cwd = list()
+        logger.info("Moved '{}' -> '{}'.".format(self, dst))
 
     def _reset_sp(self, new_sp=None):
         if new_sp is None:
@@ -256,7 +256,7 @@ class Job(object):
         # Create the workspace directory if it did not exist yet.
         try:
             _mkdir_p(self._wd)
-        except OSError as error:
+        except OSError:
             logger.error("Error occured while trying to create "
                          "workspace directory for job '{}'.".format(self))
             raise
