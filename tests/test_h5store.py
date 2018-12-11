@@ -5,6 +5,12 @@ import os
 import unittest
 import uuid
 
+try:
+    import h5py    # noqa
+    H5PY = True
+except ImportError:
+    H5PY = False
+
 from signac.core.h5store import H5Store
 from signac.common import six
 
@@ -28,6 +34,7 @@ class BaseH5StoreTest(unittest.TestCase):
         self.addCleanup(self._tmp_dir.cleanup)
 
 
+@unittest.skipIf(not H5PY, 'test requires the h5py package')
 class H5StoreTest(BaseH5StoreTest):
 
     def get_h5store(self):

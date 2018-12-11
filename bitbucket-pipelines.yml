@@ -13,8 +13,9 @@ pipelines:
           - pip --version
           - pip install -U flake8
           - python -m flake8 --show-source signac/
-          - pip install -U pandas
+          - pip install -U pandas h5py
           - python -c "import pandas; print(pandas.__version__)"
+          - python -c "import h5py; print(h5py.__version__)"
           - python setup.py build
           - python -m unittest discover tests/ -v
   branches:
@@ -26,8 +27,9 @@ pipelines:
             - pip --version
             - pip install -U flake8
             - python -m flake8 --show-source signac/
-            - pip install -U pandas
+            - pip install -U pandas h5py
             - python -c "import pandas; print(pandas.__version__)"
+            - python -c "import h5py; print(h5py.__version__)"
             - python setup.py build
             - python -m unittest discover tests/ -v
       - step:
@@ -41,8 +43,9 @@ pipelines:
             - pip3.6 install -U coverage flake8 pymongo
             - python3.6 -m coverage --version
             - python3.6 -m flake8 --show-source signac/
-            - pip install -U pandas
+            - pip install -U pandas h5py
             - python -c "import pandas; print(pandas.__version__)"
+            - python -c "import h5py; print(h5py.__version__)"
             - python3.6 setup.py build
             - python3.6 -m signac config -l host testing
             - tox --version
@@ -81,8 +84,9 @@ pipelines:
             - pip --version
             - pip install -U flake8
             - python -m flake8 --show-source signac/
-            - pip install -U pandas
+            - pip install -U pandas h5py
             - python -c "import pandas; print(pandas.__version__)"
+            - python -c "import h5py; print(h5py.__version__)"
             - python setup.py build
             - python -m unittest discover tests/ -v
       - step:
@@ -96,8 +100,9 @@ pipelines:
             - pip3.6 install -U coverage flake8 pymongo
             - python3.6 -m coverage --version
             - python3.6 -m flake8 --show-source signac/
-            - pip install -U pandas
+            - pip install -U pandas h5py
             - python -c "import pandas; print(pandas.__version__)"
+            - python -c "import h5py; print(h5py.__version__)"
             - python3.6 setup.py build
             - python3.6 -m signac config -l host testing
             - tox --version

@@ -38,7 +38,7 @@ jobs:
             virtualenv ./venv
             . venv/bin/activate
             pip install -r requirements.txt
-            pip install -U coverage mock pandas
+            pip install -U coverage mock pandas h5py
 
       - run:
           name: run tests

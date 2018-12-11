@@ -1,10 +1,9 @@
-# Copyright (c) 2017 The Regents of the University of Michigan
+# Copyright (c) 2018 The Regents of the University of Michigan
 # All rights reserved.
 # This software is licensed under the BSD 3-Clause License.
 "Data store implementation with backend HDF5 file."
 import os
 import logging
-import h5py
 
 from ..common import six
 
@@ -20,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def h5set(grp, key, value):
+    import h5py
     if key in grp:
         del grp[key]
     if isinstance(value, Mapping):
@@ -33,6 +33,7 @@ def h5set(grp, key, value):
 
 
 def h5get(grp, key):
+    import h5py
     result = grp[key]
     if isinstance(result, h5py._hl.dataset.Dataset):
         if isinstance(result.value, h5py._hl.base.Empty):
@@ -60,7 +61,10 @@ class H5Group(MutableMapping):
         del self._group[key]
 
     def __iter__(self):
-        yield from self._group.keys()
+        # The generator below should be refactored to use 'yield from'
+        # once we drop Python 2.7 support.
+        for key in self._group.keys():
+            yield key
 
     def __len__(self):
         return len(self._group)
@@ -83,6 +87,7 @@ class H5Store(MutableMapping):
         self._close()
 
     def _load(self):
+        import h5py
         assert self._filename is not None
         if self._file is None:
             self._file = h5py.File(self._filename, libver='latest', swmr=True)
@@ -105,7 +110,10 @@ class H5Store(MutableMapping):
 
     def __iter__(self):
         self._load()
-        yield from self._file.keys()
+        # The generator below should be refactored to use 'yield from'
+        # once we drop Python 2.7 support.
+        for key in self._file.keys():
+            yield key
 
     def __len__(self):
         self._load()
