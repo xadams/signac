@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 def h5set(grp, key, value):
-    import h5py
     if key in grp:
         del grp[key]
     if isinstance(value, Mapping):
@@ -27,23 +26,24 @@ def h5set(grp, key, value):
         for k, v in value.items():
             h5set(subgrp, k, v)
     elif value is None:
-        grp[key] = h5py.Empty('f')
+        grp.create_dataset(key, data=None, shape=None, dtype='f')
     else:
         grp[key] = value
 
 
 def h5get(grp, key):
-    import h5py
     result = grp[key]
-    if isinstance(result, h5py._hl.dataset.Dataset):
-        if isinstance(result.value, h5py._hl.base.Empty):
+    try:
+        shape = result.shape
+        if shape is None:
             return None
         else:
             return result.value
-    elif isinstance(result, h5py._hl.group.Group):
-        return H5Group(result)
-    else:
-        return result
+    except AttributeError:
+        if isinstance(result, MutableMapping):
+            return H5Group(result)
+        else:
+            return result
 
 
 class H5Group(MutableMapping):
@@ -72,29 +72,32 @@ class H5Group(MutableMapping):
 
 class H5Store(MutableMapping):
 
-    def __init__(self, filename=None):
-        self._filename = None if filename is None else os.path.realpath(filename)
+    def __init__(self, filename):
+        assert isinstance(filename, six.string_types) and len(filename) > 0, \
+            'H5Store filename must be a non-empty string.'
+        self._filename = os.path.realpath(filename)
         self._file = None
 
     def __del__(self):
-        self._close()
+        self.close()
 
     def __enter__(self):
         self._load()
         return self
 
     def __exit__(self, exception_type, exception_value, exception_traceback):
-        self._close()
+        self.close()
 
     def _load(self):
-        import h5py
-        assert self._filename is not None
         if self._file is None:
+            import h5py
             self._file = h5py.File(self._filename, libver='latest', swmr=True)
 
-    def _close(self):
-        if self._file is not None:
+    def close(self):
+        try:
             self._file.close()
+        except AttributeError:
+            pass
 
     def __getitem__(self, key):
         self._load()

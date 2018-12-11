@@ -46,6 +46,14 @@ class H5StoreTest(BaseH5StoreTest):
     def test_init(self):
         self.get_h5store()
 
+    def test_invalid_filenames(self):
+        with self.assertRaises(AssertionError):
+            H5Store(None)
+        with self.assertRaises(AssertionError):
+            H5Store('')
+        with self.assertRaises(AssertionError):
+            H5Store(123)
+
     def test_set_get(self):
         h5s = self.get_h5store()
         key = 'setget'
