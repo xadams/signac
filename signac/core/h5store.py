@@ -120,7 +120,7 @@ class H5Store(MutableMapping):
             assert h5s.foo == 'bar'
 
     """
-    _PROTECTED_KEYS = ('_filename', '_file', '_load')
+    _PROTECTED_KEYS = ('_filename', '_file')
 
     def __init__(self, filename):
         if not (isinstance(filename, six.string_types) and len(filename) > 0):
@@ -132,33 +132,40 @@ class H5Store(MutableMapping):
         self.close()
 
     def __enter__(self):
-        self._load()
+        self.open()
         return self
 
     def __exit__(self, exception_type, exception_value, exception_traceback):
         self.close()
 
-    def _load(self):
+    def ensure_open(self):
+        if self._file is None:
+            raise RuntimeError("""To access data in an H5Store, it must be open.
+            Use `with H5Store('filename'):` to read or write data.""")
+
+    def open(self):
         if self._file is None:
             import h5py
             self._file = h5py.File(self._filename)
+        return self
 
     def close(self):
         try:
             self._file.close()
+            self._file = None
         except AttributeError:  # If _file is None, AttributeError is raised
             pass
 
     def __getitem__(self, key):
-        self._load()
+        self.ensure_open()
         return _h5get(self._file, key)
 
     def __setitem__(self, key, value):
-        self._load()
+        self.ensure_open()
         _h5set(self._file, _validate_key(key), value)
 
     def __delitem__(self, key):
-        self._load()
+        self.ensure_open()
         del self._file[key]
 
     def __getattr__(self, name):
@@ -179,12 +186,12 @@ class H5Store(MutableMapping):
             self.__setitem__(key, value)
 
     def __iter__(self):
-        self._load()
+        self.ensure_open()
         # The generator below should be refactored to use 'yield from'
         # once we drop Python 2.7 support.
         for key in self._file.keys():
             yield key
 
     def __len__(self):
-        self._load()
+        self.ensure_open()
         return len(self._file)
