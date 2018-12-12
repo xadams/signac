@@ -50,7 +50,7 @@ class Job(object):
     """
     FN_DOCUMENT = 'signac_job_document.json'
     "The job's document filename."
-    FN_DATASTORE = 'signac_datastore.h5'
+    FN_DATA = 'signac_data.h5'
     "The job's datastore filename."
 
     def __init__(self, project, statepoint, _id=None):
@@ -65,8 +65,8 @@ class Job(object):
         self._wd = os.path.join(project.workspace(), self._id)
         self._fn_doc = os.path.join(self._wd, self.FN_DOCUMENT)
         self._document = None
-        self._fn_datastore = os.path.join(self._wd, self.FN_DATASTORE)
-        self._datastore = None
+        self._fn_data = os.path.join(self._wd, self.FN_DATA)
+        self._data = None
         self._cwd = list()
 
     def get_id(self):
@@ -255,44 +255,34 @@ class Job(object):
     def doc(self, new_doc):
         self.document = new_doc
 
-    def _reset_datastore(self, new_data):
+    def _reset_data(self, new_data):
         if not isinstance(new_data, Mapping):
-            raise ValueError("The datastore must be a mapping.")
-        dirname, filename = os.path.split(self._fn_datastore)
+            raise ValueError("The data must be a mapping.")
+        dirname, filename = os.path.split(self._fn_data)
         fn_tmp = os.path.join(dirname, '._{uid}_{fn}'.format(
             uid=uuid.uuid4(), fn=filename))
         with H5Store(filename=fn_tmp) as tmpstore:
             for key, value in new_data.items():
                 tmpstore[key] = value
         if six.PY2:
-            os.rename(fn_tmp, self._fn_datastore)
+            os.rename(fn_tmp, self._fn_data)
         else:
-            os.replace(fn_tmp, self._fn_datastore)
-
-    @property
-    def datastore(self):
-        """The datastore associated with this job.
-
-        :return: An HDF5-backed datastore.
-        :rtype: :class:`~signac.core.h5store.H5Store`"""
-        if self._datastore is None:
-            self.init()
-            self._datastore = H5Store(filename=self._fn_datastore)
-        return self._datastore
-
-    @datastore.setter
-    def datastore(self, new_data):
-        self._reset_datastore(new_data)
+            os.replace(fn_tmp, self._fn_data)
 
     @property
     def data(self):
-        """Alias for :attr:`.datastore`.
-        """
-        return self.datastore
+        """The data associated with this job.
+
+        :return: An HDF5-backed datastore.
+        :rtype: :class:`~signac.core.h5store.H5Store`"""
+        if self._data is None:
+            self.init()
+            self._data = H5Store(filename=self._fn_data)
+        return self._data
 
     @data.setter
     def data(self, new_data):
-        self.datastore = new_data
+        self._reset_data(new_data)
 
     def _init(self, force=False):
         fn_manifest = os.path.join(self._wd, self.FN_MANIFEST)
