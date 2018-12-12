@@ -38,7 +38,14 @@ jobs:
             virtualenv ./venv
             . venv/bin/activate
             pip install -r requirements.txt
-            pip install -U coverage mock pandas h5py
+            pip install -U coverage mock pandas
+            echo "CircleCI job: $CIRCLE_JOB"
+            if [[ "$CIRCLE_JOB" == *"pypy"* ]]; then
+              git clone https://bitbucket.hdfgroup.org/scm/hdffv/hdf5.git
+              HDF5_DIR=hdf5 pip install h5py
+            else
+              pip install -U h5py
+            fi
 
       - run:
           name: run tests
