@@ -115,16 +115,16 @@ class H5Store(MutableMapping):
 
     .. code-block:: python
 
-        h5s = H5Store('file.h5')
-        h5s['foo'] = 'bar'
-        assert h5s.foo == 'bar'
+        with H5Store('file.h5') as h5s:
+            h5s['foo'] = 'bar'
+            assert h5s.foo == 'bar'
 
     """
     _PROTECTED_KEYS = ('_filename', '_file', '_load')
 
     def __init__(self, filename):
-        assert isinstance(filename, six.string_types) and len(filename) > 0, \
-            'H5Store filename must be a non-empty string.'
+        if not (isinstance(filename, six.string_types) and len(filename) > 0):
+            raise ValueError('H5Store filename must be a non-empty string.')
         self._filename = os.path.realpath(filename)
         self._file = None
 
@@ -146,7 +146,7 @@ class H5Store(MutableMapping):
     def close(self):
         try:
             self._file.close()
-        except AttributeError:
+        except AttributeError:  # If _file is None, AttributeError is raised
             pass
 
     def __getitem__(self, key):

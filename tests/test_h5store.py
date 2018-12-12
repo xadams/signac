@@ -5,6 +5,7 @@ import os
 import unittest
 import uuid
 from itertools import chain
+from array import array
 
 try:
     import h5py    # noqa
@@ -20,17 +21,13 @@ if six.PY2:
 else:
     from tempfile import TemporaryDirectory
 
-FN_STORE = 'h5store.h5'
-
-
-def testdata():
-    return str(uuid.uuid4())
+FN_STORE = 'signac_test_h5store.h5'
 
 
 class BaseH5StoreTest(unittest.TestCase):
 
     def setUp(self):
-        self._tmp_dir = TemporaryDirectory(prefix='h5store_')
+        self._tmp_dir = TemporaryDirectory(prefix='signac_test_h5store_')
         self._fn_store = os.path.join(self._tmp_dir.name, FN_STORE)
         self.addCleanup(self._tmp_dir.cleanup)
 
@@ -48,11 +45,11 @@ class H5StoreTest(BaseH5StoreTest):
         self.get_h5store()
 
     def test_invalid_filenames(self):
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             H5Store(None)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             H5Store('')
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             H5Store(123)
 
     def test_set_get(self):
@@ -63,14 +60,15 @@ class H5StoreTest(BaseH5StoreTest):
         self.assertFalse(bool(h5s))
         self.assertEqual(len(h5s), 0)
         self.assertNotIn(key, h5s)
-        self.assertFalse(key in h5s)
+        with self.assertRaises(KeyError):
+            h5s[key]
         h5s[key] = d
         self.assertTrue(bool(h5s))
         self.assertEqual(len(h5s), 1)
         self.assertIn(key, h5s)
-        self.assertTrue(key in h5s)
         self.assertEqual(h5s[key], d)
         self.assertEqual(h5s.get(key), d)
+        self.assertEqual(h5s.get('nonexistent', 'default'), 'default')
 
     def test_set_get_explicit_nested(self):
         h5s = self.get_h5store()
@@ -146,6 +144,7 @@ class H5StoreTest(BaseH5StoreTest):
 
     def test_clear(self):
         h5s = self.get_h5store()
+        h5s.clear()
         key = 'clear'
         d = self.get_testdata()
         h5s[key] = d
@@ -173,6 +172,30 @@ class H5StoreTest(BaseH5StoreTest):
         h5s2 = self.get_h5store()
         self.assertEqual(len(h5s2), 1)
         self.assertEqual(h5s2[key], d)
+
+    def test_write_valid_types(self):
+        h5s = self.get_h5store()
+        valid_types = {
+            'int': 123,
+            'float': 123.456,
+            'string': 'foobar',
+            'none': None,
+            'float_array': array('f', [-1.5, 0, 1.5]),
+            'double_array': array('d', [-1.5, 0, 1.5]),
+            'int_array': array('i', [-1, 0, 1]),
+            'uint_array': array('I', [0, 1, 2]),
+            'dict': {
+                'a': 1,
+                'b': None,
+                'c': 'test',
+            },
+        }
+        for k, v in valid_types.items():
+            h5s[k] = v
+            if k.endswith('array'):
+                self.assertTrue((h5s[k] == v).all())
+            else:
+                self.assertEqual(h5s[k], v)
 
     def test_write_invalid_type(self):
         class Foo(object):
@@ -250,6 +273,13 @@ class H5StoreTest(BaseH5StoreTest):
         check_nested({'b': 2}, 2)
         h5s['a']['b'] = 3
         check_nested({'b': 3}, 3)
+
+    def test_modify_nested(self):
+        h5s = self.get_h5store()
+        h5s.a = dict(b=True)
+        a = h5s.a
+        a['b'] = False
+        assert h5s.a['b'] == False
 
     def test_attr_reference_modification(self):
         h5s = self.get_h5store()
