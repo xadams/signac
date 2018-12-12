@@ -40,7 +40,7 @@ jobs:
             pip install -r requirements.txt
             pip install -U coverage mock pandas
             if [[ "$CIRCLE_JOB" == *"pypy"* ]]; then
-              apt update && apt install --yes libhdf5-dev
+              apt update -qq && apt install -qq libhdf5-dev
               pip install --no-binary h5py h5py
             else
               pip install -U h5py
