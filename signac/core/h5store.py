@@ -91,7 +91,7 @@ class H5Store(MutableMapping):
     def _load(self):
         if self._file is None:
             import h5py
-            self._file = h5py.File(self._filename, libver='latest', swmr=True)
+            self._file = h5py.File(self._filename)
 
     def close(self):
         try:
