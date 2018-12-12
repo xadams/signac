@@ -4,6 +4,7 @@
 import os
 import unittest
 import uuid
+from itertools import chain
 
 try:
     import h5py    # noqa
@@ -211,6 +212,89 @@ class H5StoreTest(BaseH5StoreTest):
         d = None
         h5s[key] = d
         self.assertEqual(h5s[key], d)
+
+    def test_set_get_attr_sync(self):
+        h5s = self.get_h5store()
+        self.assertEqual(len(h5s), 0)
+        self.assertNotIn('a', h5s)
+        with self.assertRaises(AttributeError):
+            h5s.a
+        a = 0
+        h5s.a = a
+        self.assertEqual(len(h5s), 1)
+        self.assertIn('a', h5s)
+        self.assertEqual(h5s.a, a)
+        self.assertEqual(h5s['a'], a)
+        a = 1
+        h5s.a = a
+        self.assertEqual(len(h5s), 1)
+        self.assertIn('a', h5s)
+        self.assertEqual(h5s.a, a)
+        self.assertEqual(h5s['a'], a)
+
+        def check_nested(a, b):
+            self.assertEqual(len(h5s), 1)
+            self.assertEqual(len(h5s.a), 1)
+            self.assertIn('a', h5s)
+            self.assertIn('b', h5s.a)
+            self.assertEqual(h5s.a, a)
+            self.assertEqual(h5s['a']['b'], b)
+            self.assertEqual(h5s.a.b, b)
+            self.assertEqual(h5s['a'], a)
+
+        h5s.a = {'b': 0}
+        check_nested({'b': 0}, 0)
+        h5s.a.b = 1
+        check_nested({'b': 1}, 1)
+        h5s['a'] = {'b': 2}
+        check_nested({'b': 2}, 2)
+        h5s['a']['b'] = 3
+        check_nested({'b': 3}, 3)
+
+    def test_attr_reference_modification(self):
+        h5s = self.get_h5store()
+        self.assertEqual(len(h5s), 0)
+        self.assertNotIn('a', h5s)
+        with self.assertRaises(AttributeError):
+            h5s.a
+        pairs = [(0, 1), (0.0, 1.0), ('0', '1'), (False, True)]
+        dict_pairs = [(dict(c=a), dict(c=b)) for a, b in pairs]
+        for A, B in chain(pairs, dict_pairs):
+            h5s.a = A
+            a = h5s.a
+            self.assertEqual(a, A)
+            self.assertEqual(h5s.a, A)
+            a = B
+            self.assertEqual(a, B)
+            self.assertEqual(h5s.a, A)
+            a = h5s['a']
+            self.assertEqual(a, A)
+            self.assertEqual(h5s.a, A)
+            a = B
+            self.assertEqual(a, B)
+            self.assertEqual(h5s.a, A)
+
+            # with nested values
+            h5s['a'] = dict(b=A)
+            self.assertEqual(h5s.a.b, A)
+            b = h5s.a.b
+            self.assertEqual(b, A)
+            self.assertEqual(h5s.a.b, A)
+            b = B
+            self.assertEqual(b, B)
+            self.assertEqual(h5s.a.b, A)
+            b = h5s['a']['b']
+            self.assertEqual(b, A)
+            self.assertEqual(h5s.a.b, A)
+            b = B
+            self.assertEqual(b, B)
+            self.assertEqual(h5s.a.b, A)
+            b = h5s['a'].b
+            self.assertEqual(b, A)
+            self.assertEqual(h5s.a.b, A)
+            b = B
+            self.assertEqual(b, B)
+            self.assertEqual(h5s.a.b, A)
 
 
 class H5StoreNestedDataTest(H5StoreTest):
