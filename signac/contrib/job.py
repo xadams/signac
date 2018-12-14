@@ -414,7 +414,6 @@ class Job(object):
                 self._document = None
             self._data = None
 
-
     def move(self, project):
         """Move this job to project.
 

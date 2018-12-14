@@ -293,7 +293,7 @@ class H5StoreTest(BaseH5StoreTest):
             h5s.a = dict(b=True)
             a = h5s.a
             a['b'] = False
-            assert h5s.a['b'] == False
+            assert not h5s.a['b']
 
     def test_attr_reference_modification(self):
         with self.get_h5store() as h5s:
