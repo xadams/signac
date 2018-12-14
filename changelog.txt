@@ -20,6 +20,11 @@ Highlights
 [next] -- YYYY-MM-DD
 --------------------
 
+Added
++++++
+
+ - Adds an ``H5Store`` class, useful for storing array-like data with an HDF5 backend. Accessible via ``with job.data:`` or ``with project.data:``.
+
 Fixed
 +++++
 

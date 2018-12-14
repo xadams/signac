@@ -42,31 +42,46 @@ class Job(object):
     Application developers should usually not need to directly
     instantiate this class, but use :meth:`~signac.Project.open_job`
     instead."""
+
     FN_MANIFEST = 'signac_statepoint.json'
     """The job's manifest filename.
 
     The job manifest, this means a human-readable dump of the job's\
     statepoint is stored in each workspace directory.
     """
+
     FN_DOCUMENT = 'signac_job_document.json'
     "The job's document filename."
+
     FN_DATA = 'signac_data.h5'
     "The job's datastore filename."
 
     def __init__(self, project, statepoint, _id=None):
         self._project = project
+
+        # Ensure that the job id is configured
         if _id is None:
             self._statepoint = json.loads(json.dumps(statepoint))
             self._id = calc_id(self._statepoint)
         else:
             self._statepoint = dict(statepoint)
             self._id = _id
+
+        # Prepare job statepoint
         self._sp = SyncedAttrDict(self._statepoint, parent=_sp_save_hook(self))
+
+        # Prepare job working directory
         self._wd = os.path.join(project.workspace(), self._id)
+
+        # Prepare job document
         self._fn_doc = os.path.join(self._wd, self.FN_DOCUMENT)
         self._document = None
+
+        # Prepare job datastore
         self._fn_data = os.path.join(self._wd, self.FN_DATA)
         self._data = None
+
+        # Prepare current working directory for context management
         self._cwd = list()
 
     def get_id(self):
@@ -148,6 +163,8 @@ class Job(object):
         self._wd = dst._wd
         self._fn_doc = dst._fn_doc
         self._document = None
+        self._fn_data = dst._fn_data
+        self._data = None
         self._cwd = list()
         logger.info("Moved '{}' -> '{}'.".format(self, dst))
 
@@ -255,20 +272,6 @@ class Job(object):
     def doc(self, new_doc):
         self.document = new_doc
 
-    def _reset_data(self, new_data):
-        if not isinstance(new_data, Mapping):
-            raise ValueError("The data must be a mapping.")
-        dirname, filename = os.path.split(self._fn_data)
-        fn_tmp = os.path.join(dirname, '._{uid}_{fn}'.format(
-            uid=uuid.uuid4(), fn=filename))
-        with H5Store(filename=fn_tmp) as tmpstore:
-            for key, value in new_data.items():
-                tmpstore[key] = value
-        if six.PY2:
-            os.rename(fn_tmp, self._fn_data)
-        else:
-            os.replace(fn_tmp, self._fn_data)
-
     @property
     def data(self):
         """The data associated with this job.
@@ -282,7 +285,8 @@ class Job(object):
 
     @data.setter
     def data(self, new_data):
-        self._reset_data(new_data)
+        self._data.clear()
+        self._data.update(new_data)
 
     def _init(self, force=False):
         fn_manifest = os.path.join(self._wd, self.FN_MANIFEST)
@@ -408,6 +412,8 @@ class Job(object):
                     if not error.errno == errno.ENOENT:
                         raise error
                 self._document = None
+            self._data = None
+
 
     def move(self, project):
         """Move this job to project.

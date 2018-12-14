@@ -140,8 +140,8 @@ class H5Store(MutableMapping):
 
     def ensure_open(self):
         if self._file is None:
-            raise RuntimeError("""To access data in an H5Store, it must be open.
-            Use `with H5Store('filename'):` to read or write data.""")
+            raise RuntimeError("To access data in an H5Store, it must be open. "
+            "Use `with` or call open() and close() explicitly.")
 
     def open(self):
         if self._file is None:
