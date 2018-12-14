@@ -15,6 +15,34 @@ else:
     from collections.abc import Mapping
     from collections.abc import MutableMapping
 
+try:
+    import pandas as pd
+
+    def _group_is_pandas_type(group):
+        return 'pandas_type' in group.attrs
+
+    def _is_pandas_type(value):
+        return isinstance(value, pd.core.generic.PandasObject)
+
+except ImportError:
+
+    def _is_pandas_object(value):
+        return False
+
+    def _group_is_pandas_type(group):
+        if 'pandas_type' in group.attrs:
+            logger.warning(
+                "The object stored under group '{}' appears to be a pandas object, but pandas "
+                "is not installed!".format(group))
+
+
+def _requires_pytables():
+    try:
+        import tables  # noqa
+    except ImportError:
+        raise ImportError(
+            "Storing and loading pandas objects requires the PyTables package.")
+
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +63,16 @@ def _h5set(grp, key, value):
         grp[key] = value
 
 
-def _h5get(grp, key):
+def _h5get(grp, key, path=''):
     """Retrieve the underlying data for a key from its h5py container."""
-
+    path = path + '/' + key if path else key
     result = grp[key]
+
+    if _group_is_pandas_type(result):
+        _requires_pytables()
+        with pd.HDFStore(grp.file.filename) as store:
+            return store[path]
+
     try:
         shape = result.shape
         if shape is None:
@@ -47,7 +81,7 @@ def _h5get(grp, key):
             return result.value
     except AttributeError:
         if isinstance(result, MutableMapping):
-            return H5Group(result)
+            return H5Group(result, path)
         else:
             return result
 
@@ -66,13 +100,14 @@ def _validate_key(key):
 
 class H5Group(MutableMapping):
     """An abstraction layer over h5py's Group objects, to manage and return data."""
-    _PROTECTED_KEYS = ('_group')
+    _PROTECTED_KEYS = ('_group', '_path')
 
-    def __init__(self, group):
+    def __init__(self, group, path):
         self._group = group
+        self._path = path
 
     def __getitem__(self, key):
-        return _h5get(self._group, key)
+        return _h5get(self._group, key, self._path)
 
     def __setitem__(self, key, value):
         _h5set(self._group, key, value)
@@ -82,15 +117,10 @@ class H5Group(MutableMapping):
         del self._group[key]
 
     def __getattr__(self, name):
-        try:
-            return super(H5Group, self).__getattribute__(name)
-        except AttributeError:
-            if name.startswith('__'):
-                raise
-            try:
-                return self.__getitem__(name)
-            except KeyError as e:
-                raise AttributeError(e)
+        if name in self._group.keys():
+            return self.__getitem__(name)
+        else:
+            return getattr(self._group, name)
 
     def __setattr__(self, key, value):
         if key.startswith('__') or key in self.__getattribute__('_PROTECTED_KEYS'):
@@ -106,6 +136,12 @@ class H5Group(MutableMapping):
 
     def __len__(self):
         return len(self._group)
+
+    def __eq__(self, other):
+        if type(other) == type(self):
+            return self._group == other._group
+        else:
+            return super(H5Group, self).__eq__(other)
 
 
 class H5Store(MutableMapping):
@@ -164,13 +200,22 @@ class H5Store(MutableMapping):
         except AttributeError:  # If _file is None, AttributeError is raised
             pass
 
+    def flush(self):
+        self._file.flush()
+
     def __getitem__(self, key):
+        key = key if key.startswith('/') else '/' + key
         self._ensure_open()
         return _h5get(self._file, key)
 
     def __setitem__(self, key, value):
         self._ensure_open()
-        _h5set(self._file, _validate_key(key), value)
+        if _is_pandas_type(value):
+            _requires_pytables()
+            with pd.HDFStore(self._filename) as store:
+                store[_validate_key(key)] = value
+        else:
+            _h5set(self._file, _validate_key(key), value)
         return value
 
     def __delitem__(self, key):

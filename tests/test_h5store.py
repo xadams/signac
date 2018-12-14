@@ -4,14 +4,29 @@
 import os
 import unittest
 import uuid
+import string
 from itertools import chain
 from array import array
+from collections.abc import Mapping
 
 try:
     import h5py    # noqa
     H5PY = True
 except ImportError:
     H5PY = False
+
+try:
+    import pandas   # noqa
+    import tables   # noqa
+    PANDAS_AND_TABLES = True
+except ImportError:
+    PANDAS_AND_TABLES = False
+
+try:
+    import numpy    # noqa
+    NUMPY = True
+except ImportError:
+    NUMPY = False
 
 from signac.core.h5store import H5Store
 from signac.common import six
@@ -346,6 +361,43 @@ class H5StoreNestedDataTest(H5StoreTest):
 
     def get_testdata(self):
         return dict(a=super(H5StoreNestedDataTest, self).get_testdata())
+
+
+@unittest.skipIf(not PANDAS_AND_TABLES, 'requires pandas and pytables')
+@unittest.skipIf(not NUMPY, 'requires numpy package')
+class H5StorePandasDataTest(H5StoreTest):
+
+    def get_testdata(self):
+        return pandas.DataFrame(
+            numpy.random.rand(8, 2), index=[string.ascii_letters[i] for i in range(8)])
+
+    def assertEqual(self, a, b):
+        try:
+            return (a == b).all()
+        except (AttributeError, ValueError):
+            return super(H5StorePandasDataTest, self).assertEqual(a, b)
+        else:
+            assert isinstance(a, pandas.DataFrame)
+
+
+@unittest.skipIf(not PANDAS_AND_TABLES, 'requires pandas and pyables')
+@unittest.skipIf(not NUMPY, 'requires numpy package')
+class H5StoreNestedPandasDataTest(H5StorePandasDataTest):
+
+    def get_testdata(self):
+        return dict(df=pandas.DataFrame(
+            numpy.random.rand(8, 2), index=[string.ascii_letters[i] for i in range(8)]))
+
+    def assertEqual(self, a, b):
+        try:
+            super(H5StoreNestedPandasDataTest, self).assertEqual(len(a), len(b))
+            super(H5StoreNestedPandasDataTest, self).assertEqual(a.keys(), b.keys())
+            for key in a:
+                super(H5StoreNestedPandasDataTest, self).assertEqual(a[key], b[key])
+        except (TypeError, AttributeError):
+            super(H5StoreNestedPandasDataTest, self).assertEqual(a, b)
+        else:
+            assert isinstance(a, Mapping) and isinstance(b, Mapping)
 
 
 if __name__ == '__main__':
