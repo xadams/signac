@@ -139,7 +139,7 @@ class H5Store(MutableMapping):
     def __exit__(self, exception_type, exception_value, exception_traceback):
         self.close()
 
-    def ensure_open(self):
+    def _ensure_open(self):
         """Raises an error if the datastore is not open.
 
         :raises RuntimeError: If the datastore is not open.
@@ -165,16 +165,16 @@ class H5Store(MutableMapping):
             pass
 
     def __getitem__(self, key):
-        self.ensure_open()
+        self._ensure_open()
         return _h5get(self._file, key)
 
     def __setitem__(self, key, value):
-        self.ensure_open()
+        self._ensure_open()
         _h5set(self._file, _validate_key(key), value)
         return value
 
     def __delitem__(self, key):
-        self.ensure_open()
+        self._ensure_open()
         del self._file[key]
 
     def __getattr__(self, name):
@@ -195,12 +195,12 @@ class H5Store(MutableMapping):
             self.__setitem__(key, value)
 
     def __iter__(self):
-        self.ensure_open()
+        self._ensure_open()
         # The generator below should be refactored to use 'yield from'
         # once we drop Python 2.7 support.
         for key in self._file.keys():
             yield key
 
     def __len__(self):
-        self.ensure_open()
+        self._ensure_open()
         return len(self._file)
