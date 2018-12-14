@@ -76,7 +76,8 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertNotIn(key, h5s)
             with self.assertRaises(KeyError):
                 h5s[key]
-            h5s[key] = d
+            d_ = h5s[key] = d
+            self.assertEqual(d_, d)
             self.assertTrue(bool(h5s))
             self.assertEqual(len(h5s), 1)
             self.assertIn(key, h5s)
