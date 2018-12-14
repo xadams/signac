@@ -76,6 +76,7 @@ class H5Group(MutableMapping):
 
     def __setitem__(self, key, value):
         _h5set(self._group, key, value)
+        return value
 
     def __delitem__(self, key):
         del self._group[key]
@@ -164,6 +165,7 @@ class H5Store(MutableMapping):
     def __setitem__(self, key, value):
         self.ensure_open()
         _h5set(self._file, _validate_key(key), value)
+        return value
 
     def __delitem__(self, key):
         self.ensure_open()
