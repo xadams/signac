@@ -947,6 +947,16 @@ class JobDataTest(BaseJobTest):
             self.assertEqual(job.data.get(key), d)
             self.assertEqual(job.data.get('bs', d), d)
 
+    def test_set_statepoint_attr(self):
+        key = 'get_set_statepoint_attr'
+        d = testdata()
+        job = self.open_job(test_token)
+        with job.data:
+            job.data[key] = d
+            self.assertEqual(
+                dict(job.data._file[key].attrs),
+                {'signac_statepoint': json.dumps(job.statepoint())})
+
     def test_del(self):
         key = 'del0'
         key1 = 'del1'

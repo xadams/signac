@@ -119,14 +119,19 @@ class H5Store(MutableMapping):
             h5s['foo'] = 'bar'
             assert h5s.foo == 'bar'
 
+    :param filename:
+        The path to the underlying HDF5-file.
+    :param default_attrs:
+        A dictionary that will be stored by default with each dataset.
     """
-    _PROTECTED_KEYS = ('_filename', '_file')
+    _PROTECTED_KEYS = ('_filename', '_file', '_default_attrs')
 
-    def __init__(self, filename):
+    def __init__(self, filename, default_attrs=None):
         if not (isinstance(filename, six.string_types) and len(filename) > 0):
             raise ValueError('H5Store filename must be a non-empty string.')
         self._filename = os.path.realpath(filename)
         self._file = None
+        self._default_attrs = default_attrs
 
     def __del__(self):
         self.close()
@@ -164,6 +169,9 @@ class H5Store(MutableMapping):
     def __setitem__(self, key, value):
         self.ensure_open()
         _h5set(self._file, _validate_key(key), value)
+        if self._default_attrs:
+            self._file[key].attrs.update(self._default_attrs)
+        return value
 
     def __delitem__(self, key):
         self.ensure_open()

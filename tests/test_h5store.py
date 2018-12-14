@@ -35,8 +35,8 @@ class BaseH5StoreTest(unittest.TestCase):
 @unittest.skipIf(not H5PY, 'test requires the h5py package')
 class H5StoreTest(BaseH5StoreTest):
 
-    def get_h5store(self):
-        return H5Store(filename=self._fn_store)
+    def get_h5store(self, **kwargs):
+        return H5Store(filename=self._fn_store, **kwargs)
 
     def get_testdata(self):
         return str(uuid.uuid4())
@@ -339,6 +339,12 @@ class H5StoreTest(BaseH5StoreTest):
                 b = B
                 self.assertEqual(b, B)
                 self.assertEqual(h5s.a.b, A)
+
+    def test_set_default_attrs(self):
+        h5s = self.get_h5store(default_attrs=dict(foo='bar'))
+        with h5s:
+            h5s['bar'] = 0
+            self.assertEqual(h5s._file['bar'].attrs, dict(foo='bar'))
 
 
 class H5StoreNestedDataTest(H5StoreTest):

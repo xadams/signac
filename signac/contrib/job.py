@@ -280,7 +280,9 @@ class Job(object):
         :rtype: :class:`~signac.core.h5store.H5Store`"""
         if self._data is None:
             self.init()
-            self._data = H5Store(filename=self._fn_data)
+            self._data = H5Store(
+                filename=self._fn_data,
+                default_attrs={'signac_statepoint': json.dumps(self._statepoint)})
         return self._data
 
     @data.setter
