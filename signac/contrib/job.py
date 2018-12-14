@@ -115,7 +115,7 @@ class Job(object):
 
     @property
     def ws(self):
-        """Alias for :attr:`.workspace`."""
+        """Alias for :attr:`Job.workspace`."""
         return self.workspace()
 
     def reset_statepoint(self, new_statepoint):
@@ -217,7 +217,7 @@ class Job(object):
 
     @property
     def sp(self):
-        """ Alias for :attr:`.statepoint`.
+        """ Alias for :attr:`Job.statepoint`.
         """
         return self.statepoint
 
@@ -264,7 +264,7 @@ class Job(object):
 
     @property
     def doc(self):
-        """Alias for :attr:`.document`.
+        """Alias for :attr:`Job.document`.
         """
         return self.document
 

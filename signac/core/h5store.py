@@ -139,18 +139,24 @@ class H5Store(MutableMapping):
         self.close()
 
     def ensure_open(self):
+        """Raises an error if the datastore is not open.
+
+        :raises RuntimeError: If the datastore is not open.
+        """
         if self._file is None:
             raise RuntimeError(
                 "To access data in an H5Store, it must be open. "
                 "Use `with` or call open() and close() explicitly.")
 
     def open(self):
+        """Opens the datastore file."""
         if self._file is None:
             import h5py
             self._file = h5py.File(self._filename)
         return self
 
     def close(self):
+        """Closes the datastore file."""
         try:
             self._file.close()
             self._file = None
