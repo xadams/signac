@@ -129,6 +129,12 @@ class H5Store(MutableMapping):
         self._filename = os.path.realpath(filename)
         self._file = None
 
+    def __repr__(self):
+        return "<{}(filename={})>".format(type(self).__name__, os.path.relpath(self._filename))
+
+    def __str__(self):
+        return "<{}(filename={})>".format(type(self).__name__, os.path.basename(self._filename))
+
     def __del__(self):
         self.close()
 

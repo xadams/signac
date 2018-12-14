@@ -105,6 +105,20 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(child1[key], d)
             self.assertEqual(child2[key], d)
 
+    def test_repr(self):
+        with self.get_h5store() as h5s:
+            key = 'test_repr'
+            h5s[key] = self.get_testdata()
+            repr(h5s)    # open
+        repr(h5s)   # closed
+
+    def test_str(self):
+        with self.get_h5store() as h5s:
+            key = 'test_repr'
+            h5s[key] = self.get_testdata()
+            str(h5s)    # open
+        str(h5s)    # closed
+
     def test_copy_value(self):
         with self.get_h5store() as h5s:
             key = 'copy_value'
