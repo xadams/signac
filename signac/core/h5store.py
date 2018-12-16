@@ -70,6 +70,7 @@ def _h5get(grp, key, path=''):
 
     if _group_is_pandas_type(result):
         _requires_pytables()
+        grp.file.flush()
         with pd.HDFStore(grp.file.filename) as store:
             return store[path]
 
@@ -212,6 +213,7 @@ class H5Store(MutableMapping):
         self._ensure_open()
         if _is_pandas_type(value):
             _requires_pytables()
+            self.flush()
             with pd.HDFStore(self._filename) as store:
                 store[_validate_key(key)] = value
         else:
