@@ -7,7 +7,16 @@ import uuid
 import string
 from itertools import chain
 from array import array
-from collections.abc import Mapping
+
+from signac.core.h5store import H5Store
+from signac.common import six
+
+if six.PY2:
+    from tempdir import TemporaryDirectory
+    from collections import Mapping
+else:
+    from tempfile import TemporaryDirectory
+    from collections.abc import Mapping
 
 try:
     import h5py    # noqa
@@ -27,14 +36,6 @@ try:
     NUMPY = True
 except ImportError:
     NUMPY = False
-
-from signac.core.h5store import H5Store
-from signac.common import six
-
-if six.PY2:
-    from tempdir import TemporaryDirectory
-else:
-    from tempfile import TemporaryDirectory
 
 FN_STORE = 'signac_test_h5store.h5'
 
