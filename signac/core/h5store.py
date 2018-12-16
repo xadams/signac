@@ -36,7 +36,7 @@ except ImportError:
                 "is not installed!".format(group))
 
 
-def _requires_pytables():
+def _requires_tables():
     try:
         import tables  # noqa
     except ImportError:
@@ -61,7 +61,7 @@ def _h5set(file, grp, key, value, path=''):
     elif value is None:
         grp.create_dataset(key, data=None, shape=None, dtype='f')
     elif _is_pandas_type(value):
-        _requires_pytables()
+        _requires_tables()
         file.close()
         with pd.HDFStore(file._filename) as store:
             store[path] = value
@@ -76,11 +76,10 @@ def _h5get(file, grp, key, path=''):
     result = grp[key]
 
     if _group_is_pandas_type(result):
-        _requires_pytables()
+        _requires_tables()
         grp.file.flush()
         with pd.HDFStore(grp.file.filename) as store:
             return store[path]
-
     try:
         shape = result.shape
         if shape is None:
