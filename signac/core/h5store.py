@@ -47,7 +47,7 @@ def _requires_tables():
 logger = logging.getLogger(__name__)
 
 
-def _h5set(file, grp, key, value, path=''):
+def _h5set(file, grp, key, value, path=None):
     """Set a key in an h5py container, recursively converting Mappings to h5py
     groups and transparently handling None."""
     path = path + '/' + key if path else key
@@ -70,7 +70,7 @@ def _h5set(file, grp, key, value, path=''):
         grp[key] = value
 
 
-def _h5get(file, grp, key, path=''):
+def _h5get(file, grp, key, path=None):
     """Retrieve the underlying data for a key from its h5py container."""
     path = path + '/' + key if path else key
     result = grp[key]
