@@ -392,7 +392,12 @@ class H5StoreNestedPandasDataTest(H5StorePandasDataTest):
     def assertEqual(self, a, b):
         try:
             super(H5StoreNestedPandasDataTest, self).assertEqual(len(a), len(b))
-            super(H5StoreNestedPandasDataTest, self).assertEqual(a.keys(), b.keys())
+            if six.PY2:
+                super(H5StoreNestedPandasDataTest, self).assertEqual(
+                    list(map(str, sorted(a.keys()))),
+                    list(map(str, sorted(b.keys()))))
+            else:
+                super(H5StoreNestedPandasDataTest, self).assertEqual(a.keys(), b.keys())
             for key in a:
                 super(H5StoreNestedPandasDataTest, self).assertEqual(a[key], b[key])
         except (TypeError, AttributeError):
