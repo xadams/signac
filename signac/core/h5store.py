@@ -47,23 +47,30 @@ def _requires_pytables():
 logger = logging.getLogger(__name__)
 
 
-def _h5set(grp, key, value):
+def _h5set(file, grp, key, value, path=''):
     """Set a key in an h5py container, recursively converting Mappings to h5py
     groups and transparently handling None."""
+    path = path + '/' + key if path else key
 
     if key in grp:
         del grp[key]
     if isinstance(value, Mapping):
         subgrp = grp.create_group(key)
         for k, v in value.items():
-            _h5set(subgrp, k, v)
+            _h5set(file, subgrp, k, v, path)
     elif value is None:
         grp.create_dataset(key, data=None, shape=None, dtype='f')
+    elif _is_pandas_type(value):
+        _requires_pytables()
+        file.close()
+        with pd.HDFStore(file._filename) as store:
+            store[path] = value
+        file.open()
     else:
         grp[key] = value
 
 
-def _h5get(grp, key, path=''):
+def _h5get(file, grp, key, path=''):
     """Retrieve the underlying data for a key from its h5py container."""
     path = path + '/' + key if path else key
     result = grp[key]
@@ -82,7 +89,7 @@ def _h5get(grp, key, path=''):
             return result.value
     except AttributeError:
         if isinstance(result, MutableMapping):
-            return H5Group(result, path)
+            return H5Group(result, file, path)
         else:
             return result
 
@@ -101,17 +108,21 @@ def _validate_key(key):
 
 class H5Group(MutableMapping):
     """An abstraction layer over h5py's Group objects, to manage and return data."""
-    _PROTECTED_KEYS = ('_group', '_path')
+    _PROTECTED_KEYS = ('_file', '_path')
 
-    def __init__(self, group, path):
-        self._group = group
+    def __init__(self, group, file, path):
+        self._file = file
         self._path = path
 
+    @property
+    def _group(self):
+        return self._file._file[self._path]
+
     def __getitem__(self, key):
-        return _h5get(self._group, key, self._path)
+        return _h5get(self._file, self._group, key, self._path)
 
     def __setitem__(self, key, value):
-        _h5set(self._group, key, value)
+        _h5set(self._file, self._group, key, value, self._path)
         return value
 
     def __delitem__(self, key):
@@ -207,18 +218,11 @@ class H5Store(MutableMapping):
     def __getitem__(self, key):
         key = key if key.startswith('/') else '/' + key
         self._ensure_open()
-        return _h5get(self._file, key)
+        return _h5get(self, self._file, key)
 
     def __setitem__(self, key, value):
         self._ensure_open()
-        if _is_pandas_type(value):
-            _requires_pytables()
-            self.close()
-            with pd.HDFStore(self._filename) as store:
-                store[_validate_key(key)] = value
-            self.open()
-        else:
-            _h5set(self._file, _validate_key(key), value)
+        _h5set(self, self._file, _validate_key(key), value)
         return value
 
     def __delitem__(self, key):
