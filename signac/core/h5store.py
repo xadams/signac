@@ -62,10 +62,9 @@ def _h5set(file, grp, key, value, path=None):
         grp.create_dataset(key, data=None, shape=None, dtype='f')
     elif _is_pandas_type(value):
         _requires_tables()
-        file.close()
+        file.flush()
         with pd.HDFStore(file._filename) as store:
             store[path] = value
-        file.open()
     else:
         grp[key] = value
 
