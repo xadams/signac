@@ -213,9 +213,10 @@ class H5Store(MutableMapping):
         self._ensure_open()
         if _is_pandas_type(value):
             _requires_pytables()
-            self.flush()
+            self.close()
             with pd.HDFStore(self._filename) as store:
                 store[_validate_key(key)] = value
+            self.open()
         else:
             _h5set(self._file, _validate_key(key), value)
         return value
