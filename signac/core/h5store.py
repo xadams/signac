@@ -65,6 +65,7 @@ def _h5set(file, grp, key, value, path=None):
         file.flush()
         with pd.HDFStore(file._filename) as store:
             store[path] = value
+        file.flush()
     else:
         grp[key] = value
 
