@@ -5,6 +5,7 @@
 import logging
 import os
 import warnings
+import array
 
 from ..common import six
 
@@ -16,29 +17,87 @@ else:
     from collections.abc import MutableMapping
 
 
+def _group_is_pandas_type(group):
+    return 'pandas_type' in group.attrs
+
+
+_is_pandas_type = None
+_pandas = None
+
+
+def _load_pandas():
+    # Late binding to improve import performance.
+    global _pandas
+    global _is_pandas_type
+
+    if _pandas is None or _is_pandas_type is None:
+        try:
+            import pandas
+
+            def _is_pandas_type(value):
+                return isinstance(value, pandas.core.generic.PandasObject)
+        except ImportError:
+            def _is_pandas_type(value):
+                return False    # Must be False when pandas is not available.
+        else:
+            _pandas = pandas
+
+
+def _requires_tables():
+    try:
+        import tables  # noqa
+    except ImportError:
+        raise ImportError(
+            "Storing and loading pandas objects requires the PyTables package.")
+
+
 logger = logging.getLogger(__name__)
 
 
-def _h5set(grp, key, value):
+def _h5set(file, grp, key, value, path=None):
     """Set a key in an h5py container, recursively converting Mappings to h5py
     groups and transparently handling None."""
+    import numpy    # h5py depends on numpy, so this is safe.
+    path = path + '/' + key if path else key
 
     if key in grp:
         del grp[key]
     if isinstance(value, Mapping):
         subgrp = grp.create_group(key)
         for k, v in value.items():
-            _h5set(subgrp, k, v)
+            _h5set(file, subgrp, k, v, path)
     elif value is None:
         grp.create_dataset(key, data=None, shape=None, dtype='f')
-    else:
+    elif isinstance(value, (int, float, str, bool, array.array)):  # officially supported types
         grp[key] = value
+    elif type(value).__module__ == numpy.__name__:       # numpy types
+        grp[key] = value
+    else:
+        _load_pandas()   # might be a pandas type
+        if _is_pandas_type(value):
+            _requires_tables()
+            file.close()
+            with _pandas.HDFStore(file._filename) as store:
+                store[path] = value
+            file.open()
+        else:
+            grp[key] = value
+            warnings.warn(
+                "Storage for object of type '{}' appears to have succeeded, but this "
+                "type is not officially supported!".format(type(value)))
 
 
-def _h5get(grp, key):
+def _h5get(file, grp, key, path=None):
     """Retrieve the underlying data for a key from its h5py container."""
-
+    path = path + '/' + key if path else key
     result = grp[key]
+
+    if _group_is_pandas_type(result):
+        _load_pandas()
+        _requires_tables()
+        grp.file.flush()
+        with _pandas.HDFStore(grp.file.filename) as store:
+            return store[path]
     try:
         shape = result.shape
         if shape is None:
@@ -47,7 +106,7 @@ def _h5get(grp, key):
             return result.value
     except AttributeError:
         if isinstance(result, MutableMapping):
-            return H5Group(result)
+            return H5Group(file, path)
         else:
             return result
 
@@ -66,31 +125,31 @@ def _validate_key(key):
 
 class H5Group(MutableMapping):
     """An abstraction layer over h5py's Group objects, to manage and return data."""
-    _PROTECTED_KEYS = ('_group')
+    _PROTECTED_KEYS = ('_file', '_path')
 
-    def __init__(self, group):
-        self._group = group
+    def __init__(self, file, path):
+        self._file = file
+        self._path = path
+
+    @property
+    def _group(self):
+        return self._file._file[self._path]
 
     def __getitem__(self, key):
-        return _h5get(self._group, key)
+        return _h5get(self._file, self._group, key, self._path)
 
     def __setitem__(self, key, value):
-        _h5set(self._group, key, value)
+        _h5set(self._file, self._group, key, value, self._path)
         return value
 
     def __delitem__(self, key):
         del self._group[key]
 
     def __getattr__(self, name):
-        try:
-            return super(H5Group, self).__getattribute__(name)
-        except AttributeError:
-            if name.startswith('__'):
-                raise
-            try:
-                return self.__getitem__(name)
-            except KeyError as e:
-                raise AttributeError(e)
+        if name in self._group.keys():
+            return self.__getitem__(name)
+        else:
+            return getattr(self._group, name)
 
     def __setattr__(self, key, value):
         if key.startswith('__') or key in self.__getattribute__('_PROTECTED_KEYS'):
@@ -106,6 +165,12 @@ class H5Group(MutableMapping):
 
     def __len__(self):
         return len(self._group)
+
+    def __eq__(self, other):
+        if type(other) == type(self):
+            return self._group == other._group
+        else:
+            return super(H5Group, self).__eq__(other)
 
 
 class H5Store(MutableMapping):
@@ -170,13 +235,17 @@ class H5Store(MutableMapping):
         except AttributeError:  # If _file is None, AttributeError is raised
             pass
 
+    def flush(self):
+        self._file.flush()
+
     def __getitem__(self, key):
+        key = key if key.startswith('/') else '/' + key
         self._ensure_open()
-        return _h5get(self._file, key)
+        return _h5get(self, self._file, key)
 
     def __setitem__(self, key, value):
         self._ensure_open()
-        _h5set(self._file, _validate_key(key), value)
+        _h5set(self, self._file, _validate_key(key), value)
         return value
 
     def __delitem__(self, key):
