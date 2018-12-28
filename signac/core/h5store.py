@@ -103,7 +103,7 @@ def _h5get(file, grp, key, path=None):
         if shape is None:
             return None
         else:
-            return result.value
+            return result[()]
     except AttributeError:
         if isinstance(result, MutableMapping):
             return H5Group(file, path)
