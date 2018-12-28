@@ -40,6 +40,7 @@ except ImportError:
 FN_STORE = 'signac_test_h5store.h5'
 
 
+@unittest.skipIf(not H5PY, 'test requires the h5py package')
 class BaseH5StoreTest(unittest.TestCase):
 
     def setUp(self):
@@ -47,15 +48,14 @@ class BaseH5StoreTest(unittest.TestCase):
         self._fn_store = os.path.join(self._tmp_dir.name, FN_STORE)
         self.addCleanup(self._tmp_dir.cleanup)
 
-
-@unittest.skipIf(not H5PY, 'test requires the h5py package')
-class H5StoreTest(BaseH5StoreTest):
-
     def get_h5store(self):
         return H5Store(filename=self._fn_store)
 
     def get_testdata(self):
         return str(uuid.uuid4())
+
+
+class H5StoreTest(BaseH5StoreTest):
 
     def test_init(self):
         self.get_h5store()
