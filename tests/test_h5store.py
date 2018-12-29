@@ -7,6 +7,7 @@ import uuid
 import string
 from itertools import chain
 from array import array
+from contextlib import contextmanager
 
 from signac.core.h5store import H5Store
 from signac.common import six
@@ -51,6 +52,11 @@ class BaseH5StoreTest(unittest.TestCase):
     def get_h5store(self):
         return H5Store(filename=self._fn_store)
 
+    @contextmanager
+    def open_h5store(self):
+        with self.get_h5store() as h5s:
+            yield h5s
+
     def get_testdata(self):
         return str(uuid.uuid4())
 
@@ -68,22 +74,8 @@ class H5StoreTest(BaseH5StoreTest):
         with self.assertRaises(ValueError):
             H5Store(123)
 
-    def test_access_closed_file(self):
-        h5s = self.get_h5store()
-        with self.assertRaises(RuntimeError):
-            h5s['a']
-        with self.assertRaises(RuntimeError):
-            h5s['a'] = 'b'
-        with self.assertRaises(RuntimeError):
-            del h5s['a']
-        with self.assertRaises(RuntimeError):
-            for key in h5s['a']:
-                pass
-        with self.assertRaises(RuntimeError):
-            len(h5s)
-
     def test_set_get(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'setget'
             d = self.get_testdata()
             h5s.clear()
@@ -102,7 +94,7 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(h5s.get('nonexistent', 'default'), 'default')
 
     def test_set_get_explicit_nested(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'setgetexplicitnested'
             d = self.get_testdata()
             h5s.setdefault('a', dict())
@@ -122,21 +114,21 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(child2[key], d)
 
     def test_repr(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'test_repr'
             h5s[key] = self.get_testdata()
             repr(h5s)    # open
         repr(h5s)   # closed
 
     def test_str(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'test_repr'
             h5s[key] = self.get_testdata()
             str(h5s)    # open
         str(h5s)    # closed
 
     def test_copy_value(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'copy_value'
             key2 = 'copy_value2'
             d = self.get_testdata()
@@ -153,7 +145,7 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(h5s[key2], d)
 
     def test_iter(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key1 = 'iter1'
             key2 = 'iter2'
             d1 = self.get_testdata()
@@ -168,7 +160,7 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(i, 1)
 
     def test_delete(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'delete'
             d = self.get_testdata()
             h5s[key] = d
@@ -180,7 +172,7 @@ class H5StoreTest(BaseH5StoreTest):
                 h5s[key]
 
     def test_update(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'update'
             d = {key: self.get_testdata()}
             h5s.update(d)
@@ -188,7 +180,7 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(h5s[key], d[key])
 
     def test_clear(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             h5s.clear()
             key = 'clear'
             d = self.get_testdata()
@@ -199,11 +191,11 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(len(h5s), 0)
 
     def test_reopen(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'reopen'
             d = self.get_testdata()
             h5s[key] = d
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             self.assertEqual(len(h5s), 1)
             self.assertEqual(h5s[key], d)
 
@@ -219,7 +211,7 @@ class H5StoreTest(BaseH5StoreTest):
         h5s.close()
 
     def test_write_valid_types(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             valid_types = {
                 'int': 123,
                 'float': 123.456,
@@ -246,7 +238,7 @@ class H5StoreTest(BaseH5StoreTest):
         class Foo(object):
             pass
 
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'write_invalid_type'
             d = self.get_testdata()
             h5s[key] = d
@@ -259,7 +251,7 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(h5s[key], d)
 
     def test_keys_with_dots(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'a.b'
             d = self.get_testdata()
             h5s[key] = d
@@ -267,7 +259,7 @@ class H5StoreTest(BaseH5StoreTest):
 
     def test_keys_with_slashes(self):
         # HDF5 uses slashes for nested keys internally
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'a/b'
             d = self.get_testdata()
             h5s[key] = d
@@ -376,6 +368,17 @@ class H5StoreNestedDataTest(H5StoreTest):
 
     def get_testdata(self):
         return dict(a=super(H5StoreNestedDataTest, self).get_testdata())
+
+
+class H5StoreClosedTest(H5StoreTest):
+
+    @contextmanager
+    def open_h5store(self):
+        yield self.get_h5store()
+
+
+class H5StoreNestedDataClosedTest(H5StoreNestedDataTest, H5StoreClosedTest):
+    pass
 
 
 @unittest.skipIf(not PANDAS_AND_TABLES, 'requires pandas and pytables')

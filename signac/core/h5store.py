@@ -6,6 +6,7 @@ import logging
 import os
 import warnings
 import array
+from contextlib import contextmanager
 
 from ..common import six
 
@@ -136,20 +137,24 @@ class H5Group(MutableMapping):
         return self._file._file[self._path]
 
     def __getitem__(self, key):
-        return _h5get(self._file, self._group, key, self._path)
+        with self._file._ensure_open():
+            return _h5get(self._file, self._group, key, self._path)
 
     def __setitem__(self, key, value):
-        _h5set(self._file, self._group, key, value, self._path)
-        return value
+        with self._file._ensure_open():
+            _h5set(self._file, self._group, key, value, self._path)
+            return value
 
     def __delitem__(self, key):
-        del self._group[key]
+        with self._file._ensure_open():
+            del self._group[key]
 
     def __getattr__(self, name):
-        if name in self._group.keys():
-            return self.__getitem__(name)
-        else:
-            return getattr(self._group, name)
+        with self._file._ensure_open():
+            if name in self._group.keys():
+                return self.__getitem__(name)
+            else:
+                return getattr(self._group, name)
 
     def __setattr__(self, key, value):
         if key.startswith('__') or key in self.__getattribute__('_PROTECTED_KEYS'):
@@ -160,17 +165,20 @@ class H5Group(MutableMapping):
     def __iter__(self):
         # The generator below should be refactored to use 'yield from'
         # once we drop Python 2.7 support.
-        for key in self._group.keys():
-            yield key
+        with self._file._ensure_open():
+            for key in self._group.keys():
+                yield key
 
     def __len__(self):
-        return len(self._group)
+        with self._file._ensure_open():
+            return len(self._group)
 
     def __eq__(self, other):
-        if type(other) == type(self):
-            return self._group == other._group
-        else:
-            return super(H5Group, self).__eq__(other)
+        with self._file._ensure_open():
+            if type(other) == type(self):
+                return self._group == other._group
+            else:
+                return super(H5Group, self).__eq__(other)
 
 
 class H5Store(MutableMapping):
@@ -210,21 +218,24 @@ class H5Store(MutableMapping):
     def __exit__(self, exception_type, exception_value, exception_traceback):
         self.close()
 
+    @contextmanager
     def _ensure_open(self):
-        """Raises an error if the datastore is not open.
-
-        :raises RuntimeError: If the datastore is not open.
-        """
+        """Reentrant context manager that opens and closes the file if necessary."""
         if self._file is None:
-            raise RuntimeError(
-                "To access data in an H5Store, it must be open. "
-                "Use `with` or call open() and close() explicitly.")
+            self.open()
+            try:
+                yield
+            finally:
+                self.close()
+        else:
+            yield
 
     def open(self):
         """Opens the datastore file."""
-        if self._file is None:
-            import h5py
-            self._file = h5py.File(self._filename)
+        if self._file is not None:
+            raise OSError("File '{}' is already open.".format(self))
+        import h5py
+        self._file = h5py.File(self._filename)
         return self
 
     def close(self):
@@ -240,17 +251,17 @@ class H5Store(MutableMapping):
 
     def __getitem__(self, key):
         key = key if key.startswith('/') else '/' + key
-        self._ensure_open()
-        return _h5get(self, self._file, key)
+        with self._ensure_open():
+            return _h5get(self, self._file, key)
 
     def __setitem__(self, key, value):
-        self._ensure_open()
-        _h5set(self, self._file, _validate_key(key), value)
-        return value
+        with self._ensure_open():
+            _h5set(self, self._file, _validate_key(key), value)
+            return value
 
     def __delitem__(self, key):
-        self._ensure_open()
-        del self._file[key]
+        with self._ensure_open():
+            del self._file[key]
 
     def __getattr__(self, name):
         try:
@@ -270,12 +281,12 @@ class H5Store(MutableMapping):
             self.__setitem__(key, value)
 
     def __iter__(self):
-        self._ensure_open()
-        # The generator below should be refactored to use 'yield from'
-        # once we drop Python 2.7 support.
-        for key in self._file.keys():
-            yield key
+        with self._ensure_open():
+            # The generator below should be refactored to use 'yield from'
+            # once we drop Python 2.7 support.
+            for key in self._file.keys():
+                yield key
 
     def __len__(self):
-        self._ensure_open()
-        return len(self._file)
+        with self._ensure_open():
+            return len(self._file)

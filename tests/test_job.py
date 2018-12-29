@@ -11,6 +11,7 @@ import uuid
 import copy
 import random
 import json
+from contextlib import contextmanager
 
 import signac.contrib
 import signac.common.config
@@ -833,21 +834,18 @@ class JobDocumentTest(BaseJobTest):
         src_job.document[key] = d
         self.assertIn(key, src_job.document)
         self.assertEqual(len(src_job.document), 1)
-        with src_job.data:
-            src_job.data[key] = d
-            self.assertIn(key, src_job.data)
-            self.assertEqual(len(src_job.data), 1)
+        src_job.data[key] = d
+        self.assertIn(key, src_job.data)
+        self.assertEqual(len(src_job.data), 1)
         src_job.reset_statepoint(dst)
         src_job = self.open_job(src)
         dst_job = self.open_job(dst)
         self.assertIn(key, dst_job.document)
         self.assertEqual(len(dst_job.document), 1)
         self.assertNotIn(key, src_job.document)
-        with dst_job.data:
-            self.assertIn(key, dst_job.data)
-            self.assertEqual(len(dst_job.data), 1)
-        with src_job.data:
-            self.assertNotIn(key, src_job.data)
+        self.assertIn(key, dst_job.data)
+        self.assertEqual(len(dst_job.data), 1)
+        self.assertNotIn(key, src_job.data)
         with self.assertRaises(RuntimeError):
             src_job.reset_statepoint(dst)
         with self.assertRaises(DestinationExistsError):
@@ -863,21 +861,18 @@ class JobDocumentTest(BaseJobTest):
         src_job.document[key] = d
         self.assertIn(key, src_job.document)
         self.assertEqual(len(src_job.document), 1)
-        with src_job.data:
-            src_job.data[key] = d
-            self.assertIn(key, src_job.data)
-            self.assertEqual(len(src_job.data), 1)
+        src_job.data[key] = d
+        self.assertIn(key, src_job.data)
+        self.assertEqual(len(src_job.data), 1)
         self.project.reset_statepoint(src_job, dst)
         src_job = self.open_job(src)
         dst_job = self.open_job(dst)
         self.assertIn(key, dst_job.document)
         self.assertEqual(len(dst_job.document), 1)
         self.assertNotIn(key, src_job.document)
-        with dst_job.data:
-            self.assertIn(key, dst_job.data)
-            self.assertEqual(len(dst_job.data), 1)
-        with src_job.data:
-            self.assertNotIn(key, src_job.data)
+        self.assertIn(key, dst_job.data)
+        self.assertEqual(len(dst_job.data), 1)
+        self.assertNotIn(key, src_job.data)
         with self.assertRaises(RuntimeError):
             self.project.reset_statepoint(src_job, dst)
         with self.assertRaises(DestinationExistsError):
@@ -897,10 +892,9 @@ class JobDocumentTest(BaseJobTest):
         src_job.document[key] = d
         self.assertIn(key, src_job.document)
         self.assertEqual(len(src_job.document), 1)
-        with src_job.data:
-            src_job.data[key] = d
-            self.assertIn(key, src_job.data)
-            self.assertEqual(len(src_job.data), 1)
+        src_job.data[key] = d
+        self.assertIn(key, src_job.data)
+        self.assertEqual(len(src_job.data), 1)
         self.project.update_statepoint(src_job, extension)
         src_job = self.open_job(src)
         dst_job = self.open_job(dst)
@@ -908,11 +902,9 @@ class JobDocumentTest(BaseJobTest):
         self.assertIn(key, dst_job.document)
         self.assertEqual(len(dst_job.document), 1)
         self.assertNotIn(key, src_job.document)
-        with dst_job.data:
-            self.assertIn(key, dst_job.data)
-            self.assertEqual(len(dst_job.data), 1)
-        with src_job.data:
-            self.assertNotIn(key, src_job.data)
+        self.assertIn(key, dst_job.data)
+        self.assertEqual(len(dst_job.data), 1)
+        self.assertNotIn(key, src_job.data)
         with self.assertRaises(RuntimeError):
             self.project.reset_statepoint(src_job, dst)
         with self.assertRaises(DestinationExistsError):
@@ -924,18 +916,23 @@ class JobDocumentTest(BaseJobTest):
         self.assertEqual(dst2_job.statepoint(), dst2)
         self.assertIn(key, dst2_job.document)
         self.assertEqual(len(dst2_job.document), 1)
-        with dst2_job.data:
-            self.assertIn(key, dst2_job.data)
-            self.assertEqual(len(dst2_job.data), 1)
+        self.assertIn(key, dst2_job.data)
+        self.assertEqual(len(dst2_job.data), 1)
 
 
-class JobDataTest(BaseJobTest):
+class JobOpenDataTest(BaseJobTest):
+
+    @staticmethod
+    @contextmanager
+    def open_data(job):
+        with job.data:
+            yield
 
     def test_get_set(self):
         key = 'get_set'
         d = testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             self.assertFalse(bool(job.data))
             self.assertEqual(len(job.data), 0)
             self.assertNotIn(key, job.data)
@@ -953,7 +950,7 @@ class JobDataTest(BaseJobTest):
         d = testdata()
         d1 = testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             self.assertEqual(len(job.data), 0)
             self.assertNotIn(key, job.data)
             job.data[key] = d
@@ -974,7 +971,7 @@ class JobDataTest(BaseJobTest):
         key = 'get_set'
         d = testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             self.assertFalse(bool(job.data))
             self.assertEqual(len(job.data), 0)
             self.assertNotIn(key, job.data)
@@ -990,7 +987,7 @@ class JobDataTest(BaseJobTest):
         key0, key1 = 'set_set0', 'set_set1'
         d0, d1 = testdata(), testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             self.assertFalse(bool(job.data))
             self.assertEqual(len(job.data), 0)
             self.assertNotIn(key0, job.data)
@@ -1000,13 +997,13 @@ class JobDataTest(BaseJobTest):
             self.assertIn(key0, job.data)
             self.assertEqual(job.data[key0], d0)
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             self.assertTrue(bool(job.data))
             self.assertEqual(len(job.data), 1)
             self.assertIn(key0, job.data)
             self.assertEqual(job.data[key0], d0)
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             job.data[key1] = d1
             self.assertTrue(bool(job.data))
             self.assertEqual(len(job.data), 2)
@@ -1021,7 +1018,7 @@ class JobDataTest(BaseJobTest):
         d2 = testdata()
         assert d0 != d1 != d2
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             self.assertEqual(len(job.data), 0)
             self.assertNotIn('key0', job.data)
             job.data['key0'] = d0
@@ -1057,7 +1054,7 @@ class JobDataTest(BaseJobTest):
         d2 = testdata()
         assert d0 != d1 != d2
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             self.assertEqual(len(job.data), 0)
             self.assertNotIn('key0', job.data)
             job.data['key0'] = d0
@@ -1092,7 +1089,7 @@ class JobDataTest(BaseJobTest):
         d0 = testdata()
         d1 = testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             self.assertEqual(len(job.data), 0)
             job.data[key] = d0
             self.assertEqual(len(job.data), 1)
@@ -1108,7 +1105,7 @@ class JobDataTest(BaseJobTest):
         d0 = testdata()
         d1 = testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             self.assertEqual(len(job.data), 0)
             job.data[key] = d0
             self.assertEqual(len(job.data), 1)
@@ -1123,7 +1120,7 @@ class JobDataTest(BaseJobTest):
         key = 'get_set'
         d = testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             job.data[key] = d
             self.assertTrue(bool(job.data))
             self.assertEqual(len(job.data), 1)
@@ -1143,7 +1140,7 @@ class JobDataTest(BaseJobTest):
         key = 'get_set'
         d = testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             job.data.update({key: d})
             self.assertIn(key, job.data)
 
@@ -1151,7 +1148,7 @@ class JobDataTest(BaseJobTest):
         key = 'clear'
         d = testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             job.data[key] = d
             self.assertIn(key, job.data)
             self.assertEqual(len(job.data), 1)
@@ -1163,12 +1160,12 @@ class JobDataTest(BaseJobTest):
         key = 'clear'
         d = testdata()
         job = self.open_job(test_token)
-        with job.data:
+        with self.open_data(job):
             job.data[key] = d
             self.assertIn(key, job.data)
             self.assertEqual(len(job.data), 1)
         job2 = self.open_job(test_token)
-        with job2.data:
+        with self.open_data(job2):
             self.assertIn(key, job2.data)
             self.assertEqual(len(job2.data), 1)
 
@@ -1177,8 +1174,8 @@ class JobDataTest(BaseJobTest):
         d = testdata()
         job = self.open_job(test_token)
         job2 = self.open_job(test_token)
-        with job.data:
-            with job2.data:
+        with self.open_data(job):
+            with self.open_data(job2):
                 self.assertNotIn(key, job.data)
                 self.assertNotIn(key, job2.data)
                 job.data[key] = d
@@ -1190,7 +1187,7 @@ class JobDataTest(BaseJobTest):
         job = self.open_job(test_token)
         job.remove()
         d = testdata()
-        with job.data:
+        with self.open_data(job):
             job.data[key] = d
             self.assertIn(key, job.data)
             self.assertEqual(len(job.data), 1)
@@ -1199,7 +1196,7 @@ class JobDataTest(BaseJobTest):
             file.write('test')
         self.assertTrue(os.path.isfile(fn_test))
         job.remove()
-        with job.data:
+        with self.open_data(job):
             self.assertNotIn(key, job.data)
         self.assertFalse(os.path.isfile(fn_test))
 
@@ -1219,13 +1216,13 @@ class JobDataTest(BaseJobTest):
         job.clear()
         self.assertIn(job, self.project)
         d = testdata()
-        with job.data:
+        with self.open_data(job):
             job.data[key] = d
             self.assertIn(job, self.project)
             self.assertIn(key, job.data)
             self.assertEqual(len(job.data), 1)
         job.clear()
-        with job.data:
+        with self.open_data(job):
             self.assertEqual(len(job.data), 0)
         with open(job.fn('test'), 'w') as file:
             file.write('test')
@@ -1233,7 +1230,7 @@ class JobDataTest(BaseJobTest):
         self.assertIn(job, self.project)
         job.clear()
         self.assertFalse(job.isfile('test'))
-        with job.data:
+        with self.open_data(job):
             self.assertEqual(len(job.data), 0)
 
     def test_reset(self):
@@ -1242,13 +1239,13 @@ class JobDataTest(BaseJobTest):
         self.assertNotIn(job, self.project)
         job.reset()
         self.assertIn(job, self.project)
-        with job.data:
+        with self.open_data(job):
             self.assertEqual(len(job.data), 0)
             job.data[key] = testdata()
             self.assertEqual(len(job.data), 1)
         job.reset()
         self.assertIn(job, self.project)
-        with job.data:
+        with self.open_data(job):
             self.assertEqual(len(job.data), 0)
 
     def test_data(self):
@@ -1263,7 +1260,7 @@ class JobDataTest(BaseJobTest):
             self.assertEqual(getattr(job.data, key), d)
             self.assertEqual(dict(job.data)[key], d)
 
-        with job.data:
+        with self.open_data(job):
             d = testdata()
             job.data[key] = d
             check_content(key, d)
@@ -1284,17 +1281,17 @@ class JobDataTest(BaseJobTest):
         dst = dict(test_token)
         dst['dst'] = True
         src_job = self.open_job(src)
-        with src_job.data:
+        with self.open_data(src_job):
             src_job.data[key] = d
             self.assertIn(key, src_job.data)
             self.assertEqual(len(src_job.data), 1)
         src_job.reset_statepoint(dst)
         src_job = self.open_job(src)
         dst_job = self.open_job(dst)
-        with dst_job.data:
+        with self.open_data(dst_job):
             self.assertIn(key, dst_job.data)
             self.assertEqual(len(dst_job.data), 1)
-        with src_job.data:
+        with self.open_data(src_job):
             self.assertNotIn(key, src_job.data)
         with self.assertRaises(RuntimeError):
             src_job.reset_statepoint(dst)
@@ -1308,17 +1305,17 @@ class JobDataTest(BaseJobTest):
         dst = dict(test_token)
         dst['dst'] = True
         src_job = self.open_job(src)
-        with src_job.data:
+        with self.open_data(src_job):
             src_job.data[key] = d
             self.assertIn(key, src_job.data)
             self.assertEqual(len(src_job.data), 1)
         self.project.reset_statepoint(src_job, dst)
         src_job = self.open_job(src)
         dst_job = self.open_job(dst)
-        with dst_job.data:
+        with self.open_data(dst_job):
             self.assertIn(key, dst_job.data)
             self.assertEqual(len(dst_job.data), 1)
-        with src_job.data:
+        with self.open_data(src_job):
             self.assertNotIn(key, src_job.data)
         with self.assertRaises(RuntimeError):
             self.project.reset_statepoint(src_job, dst)
@@ -1336,7 +1333,7 @@ class JobDataTest(BaseJobTest):
         dst2 = dict(src)
         dst2.update(extension2)
         src_job = self.open_job(src)
-        with src_job.data:
+        with self.open_data(src_job):
             src_job.data[key] = d
             self.assertIn(key, src_job.data)
             self.assertEqual(len(src_job.data), 1)
@@ -1344,10 +1341,10 @@ class JobDataTest(BaseJobTest):
         src_job = self.open_job(src)
         dst_job = self.open_job(dst)
         self.assertEqual(dst_job.statepoint(), dst)
-        with dst_job.data:
+        with self.open_data(dst_job):
             self.assertIn(key, dst_job.data)
             self.assertEqual(len(dst_job.data), 1)
-        with src_job.data:
+        with self.open_data(src_job):
             self.assertNotIn(key, src_job.data)
         with self.assertRaises(RuntimeError):
             self.project.reset_statepoint(src_job, dst)
@@ -1358,9 +1355,17 @@ class JobDataTest(BaseJobTest):
         self.project.update_statepoint(dst_job, extension2, overwrite=True)
         dst2_job = self.open_job(dst2)
         self.assertEqual(dst2_job.statepoint(), dst2)
-        with dst2_job.data:
+        with self.open_data(dst2_job):
             self.assertIn(key, dst2_job.data)
             self.assertEqual(len(dst2_job.data), 1)
+
+
+class JobClosedDataTest(JobOpenDataTest):
+
+    @staticmethod
+    @contextmanager
+    def open_data(job):
+        yield
 
 
 if __name__ == '__main__':
