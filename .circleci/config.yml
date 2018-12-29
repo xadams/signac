@@ -7,7 +7,7 @@ version: 2
 jobs:
   style-check:
     docker:
-      - image: circleci/python:3.6.1
+      - image: circleci/python:3.7
 
     working_directory: ~/repo
 
@@ -20,14 +20,23 @@ jobs:
             python -m flake8 --show-source signac/
 
 
-  test-3.6: &test-template
+  test-3.7: &test-template
     docker:
-      - image: circleci/python:3.6.1
+      - image: circleci/python:3.7
 
     working_directory: ~/repo
 
     steps:
+
       - checkout
+
+      - restore_cache:
+          keys:
+            - python-env-v1-{{ arch }}-{{ .Environment.CIRCLE_JOB }}-{{ checksum "setup.py" }}-{{ checksum "requirements-dev.txt" }}
+            - python-env-v1-{{ arch }}-{{ .Environment.CIRCLE_JOB }}-{{ checksum "setup.py" }}
+            - python-env-v1-{{ arch }}-{{ .Environment.CIRCLE_JOB }}
+            - python-env-v1-{{ arch }}
+            - python-env-v1
 
       - run:
           name: install dependencies
@@ -40,11 +49,13 @@ jobs:
             pip install -r requirements.txt
             if [[ "$CIRCLE_JOB" == *"pypy"* ]]; then
               apt update -qq && apt install -qq libhdf5-dev
-              pip install --no-binary h5py h5py
-            else
-              pip install -U h5py
             fi
-            pip install -U coverage mock pandas tables
+            pip install -U -e . -r requirements-dev.txt
+
+      - save_cache:
+          key: python-env-v1-{{ arch }}-{{ .Environment.CIRCLE_JOB }}-{{ checksum "setup.py" }}-{{ checksum "requirements-dev.txt" }}
+          paths:
+            - "venv"
 
       - run:
           name: run tests
@@ -68,18 +79,22 @@ jobs:
             git checkout "${CIRCLE_SHA1}" -- benchmark.py  # ensure that we use the same benchmark script
             python benchmark.py run -N 100 1000 --force
             python benchmark.py compare origin/master "${CIRCLE_SHA1}"
+  test-3.6:
+    <<: *test-template
+    docker:
+      - image: circleci/python:3.6
   test-3.5:
     <<: *test-template
     docker:
-      - image: circleci/python:3.5-jessie
+      - image: circleci/python:3.5
   test-3.4:
     <<: *test-template
     docker:
-      - image: circleci/python:3.4-jessie
+      - image: circleci/python:3.4
   test-2.7:
     <<: *test-template
     docker:
-      - image: circleci/python:2.7-jessie
+      - image: circleci/python:2.7
   test-pypy-2:
     <<: *test-template
     docker:
@@ -104,6 +119,9 @@ workflows:
           requires:
             - style-check
       - test-3.6:
+          requires:
+            - style-check
+      - test-3.7:
           requires:
             - style-check
       - test-pypy-2:
