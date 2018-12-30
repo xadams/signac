@@ -399,9 +399,11 @@ class H5StoreNestedDataClosedTest(H5StoreNestedDataTest, H5StoreClosedTest):
 @unittest.skipIf(not NUMPY, 'requires numpy package')
 class H5StorePandasDataTest(H5StoreTest):
 
-    def get_testdata(self):
+    def get_testdata(self, size=None):
+        if size is None:
+            size = 1024
         return pandas.DataFrame(
-            numpy.random.rand(8, 2), index=[string.ascii_letters[i] for i in range(8)])
+            numpy.random.rand(8, size), index=[string.ascii_letters[i] for i in range(8)])
 
     def assertEqual(self, a, b):
         try:
