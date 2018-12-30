@@ -161,7 +161,7 @@ class H5Group(MutableMapping):
 
     def __setitem__(self, key, value):
         with _ensure_open(self._file):
-            _h5set(self._file, self._group, key, value, self._path)
+            _h5set(self._file, self._group, _validate_key(key), value, self._path)
             return value
 
     def __delitem__(self, key):
