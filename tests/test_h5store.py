@@ -3,11 +3,14 @@
 # This software is licensed under the BSD 3-Clause License.
 import os
 import unittest
-import uuid
+import random
 import string
 from itertools import chain
 from array import array
 from contextlib import contextmanager
+from time import time
+from functools import partial
+from platform import python_implementation
 
 from signac.core.h5store import H5Store
 from signac.common import six
@@ -57,8 +60,10 @@ class BaseH5StoreTest(unittest.TestCase):
         with self.get_h5store() as h5s:
             yield h5s
 
-    def get_testdata(self):
-        return str(uuid.uuid4())
+    def get_testdata(self, size=None):
+        if size is None:
+            size = 1024
+        return ''.join([random.choice(string.ascii_lowercase) for i in range(size)])
 
 
 class H5StoreTest(BaseH5StoreTest):
@@ -318,6 +323,15 @@ class H5StoreTest(BaseH5StoreTest):
             a['b'] = False
             assert not h5s.a['b']
 
+    def test_invalid_attr(self):
+        h5s = self.get_h5store()
+        with self.assertRaises(AttributeError):
+            h5s.a
+        with self.assertRaises(AttributeError):
+            h5s._a
+        with self.assertRaises(AttributeError):
+            h5s.__a__
+
     def test_attr_reference_modification(self):
         with self.get_h5store() as h5s:
             self.assertEqual(len(h5s), 0)
@@ -366,8 +380,8 @@ class H5StoreTest(BaseH5StoreTest):
 
 class H5StoreNestedDataTest(H5StoreTest):
 
-    def get_testdata(self):
-        return dict(a=super(H5StoreNestedDataTest, self).get_testdata())
+    def get_testdata(self, size=None):
+        return dict(a=super(H5StoreNestedDataTest, self).get_testdata(size))
 
 
 class H5StoreClosedTest(H5StoreTest):
@@ -421,6 +435,82 @@ class H5StoreNestedPandasDataTest(H5StorePandasDataTest):
             super(H5StoreNestedPandasDataTest, self).assertEqual(a, b)
         else:
             assert isinstance(a, Mapping) and isinstance(b, Mapping)
+
+
+@unittest.skipIf(not NUMPY, 'requires numpy package')
+@unittest.skipUnless(python_implementation() == 'CPython', 'Optimized for CPython.')
+class H5StorePerformanceTest(BaseH5StoreTest):
+    max_slowdown_vs_native_factor = 1.25
+
+    def setUp(self):
+        super(H5StorePerformanceTest, self).setUp()
+        value = self.get_testdata()
+        times = numpy.zeros(200)
+        for i in range(len(times)):
+            start = time()
+            with h5py.File(self._fn_store) as h5file:
+                if i:
+                    del h5file['_baseline']
+                h5file.create_dataset('_baseline', data=value, shape=None)
+            times[i] = time() - start
+        self.baseline_time = times
+
+    def assertSpeed(self, times):
+        msg = "\n{:>10}\t{:>8}\t{:>8}\t{:>4}\n".format("", "Measurement", "Benchmark", "Factor")
+
+        def format_row(text, reducer):
+            return "{:<10}\t{:.2e}\t{:.2e}\t{:.3}\n".format(
+                text, reducer(times), reducer(self.baseline_time),
+                reducer(times)/reducer(self.baseline_time))
+        msg += format_row('mean', numpy.mean)
+        msg += format_row('median', numpy.median)
+        msg += format_row('25 percentile', partial(numpy.percentile, q=25))
+        msg += format_row('75 percentile', partial(numpy.percentile, q=75))
+        self.assertLess(
+            numpy.percentile(times, 75) / numpy.percentile(self.baseline_time, 75),
+            self.max_slowdown_vs_native_factor, msg)
+
+    def test_speed_get(self):
+        times = numpy.zeros(200)
+        key = 'test_speed_get'
+        value = self.get_testdata()
+        self.get_h5store()[key] = value
+        for i in range(len(times)):
+            start = time()
+            self.assertEqual(self.get_h5store()[key], value)
+            times[i] = time() - start
+        self.assertSpeed(times)
+
+    def test_speed_set(self):
+        times = numpy.zeros(200)
+        key = 'test_speed_set'
+        value = self.get_testdata()
+        for i in range(len(times)):
+            start = time()
+            self.get_h5store()[key] = value
+            times[i] = time() - start
+        self.assertSpeed(times)
+
+
+class H5StorePerformanceNestedDataTest(H5StorePerformanceTest):
+    max_slowdown_vs_native_factor = 1.75
+
+    def get_testdata(self, size=None):
+        return dict(a=super(H5StorePerformanceNestedDataTest, self).get_testdata(size))
+
+    def setUp(self):
+        super(H5StorePerformanceTest, self).setUp()
+        value = H5StorePerformanceTest.get_testdata(self)
+        times = numpy.zeros(200)
+        for i in range(len(times)):
+            start = time()
+            with h5py.File(self._fn_store) as h5file:
+                if i:
+                    del h5file['_basegroup']
+                h5file.create_group('_basegroup').create_dataset(
+                    '_baseline', data=value, shape=None)
+            times[i] = time() - start
+        self.baseline_time = times
 
 
 if __name__ == '__main__':
