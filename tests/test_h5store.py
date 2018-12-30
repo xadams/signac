@@ -477,7 +477,7 @@ class H5StorePerformanceTest(BaseH5StoreTest):
         msg += format_row('25 percentile', partial(numpy.percentile, q=25))
         msg += format_row('75 percentile', partial(numpy.percentile, q=75))
         self.assertLess(
-            numpy.percentile(times, 75) / numpy.percentile(self.baseline_time, 75),
+            numpy.percentile(times, 25) / numpy.percentile(self.baseline_time, 75),
             self.max_slowdown_vs_native_factor, msg)
 
     def test_speed_get(self):
