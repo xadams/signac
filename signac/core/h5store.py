@@ -297,3 +297,7 @@ class H5Store(MutableMapping):
     def __len__(self):
         with _ensure_open(self):
             return len(self._file)
+
+    def clear(self):
+        with _ensure_open(self):
+            self._file.clear()
