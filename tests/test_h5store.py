@@ -3,13 +3,19 @@
 # This software is licensed under the BSD 3-Clause License.
 import os
 import unittest
-import uuid
+import random
 import string
+import warnings
 from itertools import chain
 from array import array
+from contextlib import contextmanager
+from time import time
+from functools import partial
+from platform import python_implementation
 
 from signac.core.h5store import H5Store
 from signac.common import six
+from signac.warnings import SignacDeprecationWarning
 
 if six.PY2:
     from tempdir import TemporaryDirectory
@@ -40,6 +46,7 @@ except ImportError:
 FN_STORE = 'signac_test_h5store.h5'
 
 
+@unittest.skipIf(not H5PY, 'test requires the h5py package')
 class BaseH5StoreTest(unittest.TestCase):
 
     def setUp(self):
@@ -47,15 +54,21 @@ class BaseH5StoreTest(unittest.TestCase):
         self._fn_store = os.path.join(self._tmp_dir.name, FN_STORE)
         self.addCleanup(self._tmp_dir.cleanup)
 
-
-@unittest.skipIf(not H5PY, 'test requires the h5py package')
-class H5StoreTest(BaseH5StoreTest):
-
     def get_h5store(self):
         return H5Store(filename=self._fn_store)
 
-    def get_testdata(self):
-        return str(uuid.uuid4())
+    @contextmanager
+    def open_h5store(self):
+        with self.get_h5store() as h5s:
+            yield h5s
+
+    def get_testdata(self, size=None):
+        if size is None:
+            size = 1024
+        return ''.join([random.choice(string.ascii_lowercase) for i in range(size)])
+
+
+class H5StoreTest(BaseH5StoreTest):
 
     def test_init(self):
         self.get_h5store()
@@ -68,22 +81,8 @@ class H5StoreTest(BaseH5StoreTest):
         with self.assertRaises(ValueError):
             H5Store(123)
 
-    def test_access_closed_file(self):
-        h5s = self.get_h5store()
-        with self.assertRaises(RuntimeError):
-            h5s['a']
-        with self.assertRaises(RuntimeError):
-            h5s['a'] = 'b'
-        with self.assertRaises(RuntimeError):
-            del h5s['a']
-        with self.assertRaises(RuntimeError):
-            for key in h5s['a']:
-                pass
-        with self.assertRaises(RuntimeError):
-            len(h5s)
-
     def test_set_get(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'setget'
             d = self.get_testdata()
             h5s.clear()
@@ -102,7 +101,7 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(h5s.get('nonexistent', 'default'), 'default')
 
     def test_set_get_explicit_nested(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'setgetexplicitnested'
             d = self.get_testdata()
             h5s.setdefault('a', dict())
@@ -121,8 +120,22 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(child1[key], d)
             self.assertEqual(child2[key], d)
 
+    def test_repr(self):
+        with self.open_h5store() as h5s:
+            key = 'test_repr'
+            h5s[key] = self.get_testdata()
+            repr(h5s)    # open
+        repr(h5s)   # closed
+
+    def test_str(self):
+        with self.open_h5store() as h5s:
+            key = 'test_repr'
+            h5s[key] = self.get_testdata()
+            str(h5s)    # open
+        str(h5s)    # closed
+
     def test_copy_value(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'copy_value'
             key2 = 'copy_value2'
             d = self.get_testdata()
@@ -139,7 +152,7 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(h5s[key2], d)
 
     def test_iter(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key1 = 'iter1'
             key2 = 'iter2'
             d1 = self.get_testdata()
@@ -154,7 +167,7 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(i, 1)
 
     def test_delete(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'delete'
             d = self.get_testdata()
             h5s[key] = d
@@ -166,7 +179,7 @@ class H5StoreTest(BaseH5StoreTest):
                 h5s[key]
 
     def test_update(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'update'
             d = {key: self.get_testdata()}
             h5s.update(d)
@@ -174,7 +187,7 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(h5s[key], d[key])
 
     def test_clear(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             h5s.clear()
             key = 'clear'
             d = self.get_testdata()
@@ -185,11 +198,11 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(len(h5s), 0)
 
     def test_reopen(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'reopen'
             d = self.get_testdata()
             h5s[key] = d
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             self.assertEqual(len(h5s), 1)
             self.assertEqual(h5s[key], d)
 
@@ -205,7 +218,7 @@ class H5StoreTest(BaseH5StoreTest):
         h5s.close()
 
     def test_write_valid_types(self):
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             valid_types = {
                 'int': 123,
                 'float': 123.456,
@@ -232,7 +245,7 @@ class H5StoreTest(BaseH5StoreTest):
         class Foo(object):
             pass
 
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'write_invalid_type'
             d = self.get_testdata()
             h5s[key] = d
@@ -245,15 +258,19 @@ class H5StoreTest(BaseH5StoreTest):
             self.assertEqual(h5s[key], d)
 
     def test_keys_with_dots(self):
-        with self.get_h5store() as h5s:
-            key = 'a.b'
-            d = self.get_testdata()
-            h5s[key] = d
-            self.assertEqual(h5s[key], d)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            with self.open_h5store() as h5s:
+                key = 'a.b'
+                d = self.get_testdata()
+                h5s[key] = d
+                self.assertEqual(h5s[key], d)
+            assert len(w) >= 1
+            assert any(issubclass(w_.category, SignacDeprecationWarning) for w_ in w)
 
     def test_keys_with_slashes(self):
         # HDF5 uses slashes for nested keys internally
-        with self.get_h5store() as h5s:
+        with self.open_h5store() as h5s:
             key = 'a/b'
             d = self.get_testdata()
             h5s[key] = d
@@ -312,6 +329,15 @@ class H5StoreTest(BaseH5StoreTest):
             a['b'] = False
             assert not h5s.a['b']
 
+    def test_invalid_attr(self):
+        h5s = self.get_h5store()
+        with self.assertRaises(AttributeError):
+            h5s.a
+        with self.assertRaises(AttributeError):
+            h5s._a
+        with self.assertRaises(AttributeError):
+            h5s.__a__
+
     def test_attr_reference_modification(self):
         with self.get_h5store() as h5s:
             self.assertEqual(len(h5s), 0)
@@ -360,17 +386,30 @@ class H5StoreTest(BaseH5StoreTest):
 
 class H5StoreNestedDataTest(H5StoreTest):
 
-    def get_testdata(self):
-        return dict(a=super(H5StoreNestedDataTest, self).get_testdata())
+    def get_testdata(self, size=None):
+        return dict(a=super(H5StoreNestedDataTest, self).get_testdata(size))
+
+
+class H5StoreClosedTest(H5StoreTest):
+
+    @contextmanager
+    def open_h5store(self):
+        yield self.get_h5store()
+
+
+class H5StoreNestedDataClosedTest(H5StoreNestedDataTest, H5StoreClosedTest):
+    pass
 
 
 @unittest.skipIf(not PANDAS_AND_TABLES, 'requires pandas and pytables')
 @unittest.skipIf(not NUMPY, 'requires numpy package')
 class H5StorePandasDataTest(H5StoreTest):
 
-    def get_testdata(self):
+    def get_testdata(self, size=None):
+        if size is None:
+            size = 1024
         return pandas.DataFrame(
-            numpy.random.rand(8, 2), index=[string.ascii_letters[i] for i in range(8)])
+            numpy.random.rand(8, size), index=[string.ascii_letters[i] for i in range(8)])
 
     def assertEqual(self, a, b):
         try:
@@ -381,13 +420,15 @@ class H5StorePandasDataTest(H5StoreTest):
             assert isinstance(a, pandas.DataFrame)
 
 
-@unittest.skipIf(not PANDAS_AND_TABLES, 'requires pandas and pyables')
+@unittest.skipIf(not PANDAS_AND_TABLES, 'requires pandas and pytables')
 @unittest.skipIf(not NUMPY, 'requires numpy package')
 class H5StoreNestedPandasDataTest(H5StorePandasDataTest):
 
-    def get_testdata(self):
+    def get_testdata(self, size=None):
+        if size is None:
+            size = 1024
         return dict(df=pandas.DataFrame(
-            numpy.random.rand(8, 2), index=[string.ascii_letters[i] for i in range(8)]))
+            numpy.random.rand(8, size), index=[string.ascii_letters[i] for i in range(8)]))
 
     def assertEqual(self, a, b):
         try:
@@ -404,6 +445,82 @@ class H5StoreNestedPandasDataTest(H5StorePandasDataTest):
             super(H5StoreNestedPandasDataTest, self).assertEqual(a, b)
         else:
             assert isinstance(a, Mapping) and isinstance(b, Mapping)
+
+
+@unittest.skipIf(not NUMPY, 'requires numpy package')
+@unittest.skipUnless(python_implementation() == 'CPython', 'Optimized for CPython.')
+class H5StorePerformanceTest(BaseH5StoreTest):
+    max_slowdown_vs_native_factor = 1.25
+
+    def setUp(self):
+        super(H5StorePerformanceTest, self).setUp()
+        value = self.get_testdata()
+        times = numpy.zeros(200)
+        for i in range(len(times)):
+            start = time()
+            with h5py.File(self._fn_store) as h5file:
+                if i:
+                    del h5file['_baseline']
+                h5file.create_dataset('_baseline', data=value, shape=None)
+            times[i] = time() - start
+        self.baseline_time = times
+
+    def assertSpeed(self, times):
+        msg = "\n{:>10}\t{:>8}\t{:>8}\t{:>4}\n".format("", "Measurement", "Benchmark", "Factor")
+
+        def format_row(text, reducer):
+            return "{:<10}\t{:.2e}\t{:.2e}\t{:.3}\n".format(
+                text, reducer(times), reducer(self.baseline_time),
+                reducer(times)/reducer(self.baseline_time))
+        msg += format_row('mean', numpy.mean)
+        msg += format_row('median', numpy.median)
+        msg += format_row('25 percentile', partial(numpy.percentile, q=25))
+        msg += format_row('75 percentile', partial(numpy.percentile, q=75))
+        self.assertLess(
+            numpy.percentile(times, 25) / numpy.percentile(self.baseline_time, 75),
+            self.max_slowdown_vs_native_factor, msg)
+
+    def test_speed_get(self):
+        times = numpy.zeros(200)
+        key = 'test_speed_get'
+        value = self.get_testdata()
+        self.get_h5store()[key] = value
+        for i in range(len(times)):
+            start = time()
+            self.assertEqual(self.get_h5store()[key], value)
+            times[i] = time() - start
+        self.assertSpeed(times)
+
+    def test_speed_set(self):
+        times = numpy.zeros(200)
+        key = 'test_speed_set'
+        value = self.get_testdata()
+        for i in range(len(times)):
+            start = time()
+            self.get_h5store()[key] = value
+            times[i] = time() - start
+        self.assertSpeed(times)
+
+
+class H5StorePerformanceNestedDataTest(H5StorePerformanceTest):
+    max_slowdown_vs_native_factor = 1.75
+
+    def get_testdata(self, size=None):
+        return dict(a=super(H5StorePerformanceNestedDataTest, self).get_testdata(size))
+
+    def setUp(self):
+        super(H5StorePerformanceTest, self).setUp()
+        value = H5StorePerformanceTest.get_testdata(self)
+        times = numpy.zeros(200)
+        for i in range(len(times)):
+            start = time()
+            with h5py.File(self._fn_store) as h5file:
+                if i:
+                    del h5file['_basegroup']
+                h5file.create_group('_basegroup').create_dataset(
+                    '_baseline', data=value, shape=None)
+            times[i] = time() - start
+        self.baseline_time = times
 
 
 if __name__ == '__main__':

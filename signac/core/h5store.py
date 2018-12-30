@@ -5,6 +5,7 @@
 import logging
 import os
 import warnings
+import array
 
 from ..common import six
 
@@ -15,25 +16,31 @@ else:
     from collections.abc import Mapping
     from collections.abc import MutableMapping
 
-try:
-    import pandas as pd
 
-    def _group_is_pandas_type(group):
-        return 'pandas_type' in group.attrs
+def _group_is_pandas_type(group):
+    return 'pandas_type' in group.attrs
 
-    def _is_pandas_type(value):
-        return isinstance(value, pd.core.generic.PandasObject)
 
-except ImportError:
+_is_pandas_type = None
+_pandas = None
 
-    def _is_pandas_object(value):
-        return False
 
-    def _group_is_pandas_type(group):
-        if 'pandas_type' in group.attrs:
-            logger.warning(
-                "The object stored under group '{}' appears to be a pandas object, but pandas "
-                "is not installed!".format(group))
+def _load_pandas():
+    # Late binding to improve import performance.
+    global _pandas
+    global _is_pandas_type
+
+    if _pandas is None or _is_pandas_type is None:
+        try:
+            import pandas
+
+            def _is_pandas_type(value):
+                return isinstance(value, pandas.core.generic.PandasObject)
+        except ImportError:
+            def _is_pandas_type(value):
+                return False    # Must be False when pandas is not available.
+        else:
+            _pandas = pandas
 
 
 def _requires_tables():
@@ -50,6 +57,7 @@ logger = logging.getLogger(__name__)
 def _h5set(file, grp, key, value, path=None):
     """Set a key in an h5py container, recursively converting Mappings to h5py
     groups and transparently handling None."""
+    import numpy    # h5py depends on numpy, so this is safe.
     path = path + '/' + key if path else key
 
     if key in grp:
@@ -60,14 +68,23 @@ def _h5set(file, grp, key, value, path=None):
             _h5set(file, subgrp, k, v, path)
     elif value is None:
         grp.create_dataset(key, data=None, shape=None, dtype='f')
-    elif _is_pandas_type(value):
-        _requires_tables()
-        file.flush()
-        with pd.HDFStore(file._filename) as store:
-            store[path] = value
-        file.flush()
-    else:
+    elif isinstance(value, (int, float, str, bool, array.array)):  # officially supported types
         grp[key] = value
+    elif type(value).__module__ == numpy.__name__:       # numpy types
+        grp[key] = value
+    else:
+        _load_pandas()   # might be a pandas type
+        if _is_pandas_type(value):
+            _requires_tables()
+            file.flush()
+            with _pandas.HDFStore(file._filename) as store:
+                store[path] = value
+            file.flush()
+        else:
+            grp[key] = value
+            warnings.warn(
+                "Storage for object of type '{}' appears to have succeeded, but this "
+                "type is not officially supported!".format(type(value)))
 
 
 def _h5get(file, grp, key, path=None):
@@ -76,19 +93,20 @@ def _h5get(file, grp, key, path=None):
     result = grp[key]
 
     if _group_is_pandas_type(result):
+        _load_pandas()
         _requires_tables()
         grp.file.flush()
-        with pd.HDFStore(grp.file.filename) as store:
+        with _pandas.HDFStore(grp.file.filename) as store:
             return store[path]
     try:
         shape = result.shape
         if shape is None:
             return None
         else:
-            return result.value
+            return result[()]
     except AttributeError:
         if isinstance(result, MutableMapping):
-            return H5Group(result, file, path)
+            return H5Group(file, path)
         else:
             return result
 
@@ -105,11 +123,31 @@ def _validate_key(key):
     return key
 
 
+class _ensure_open(object):
+
+    __slots__ = ['file', 'open']
+
+    def __init__(self, file):
+        self.file = file
+        self.open = False
+
+    def __enter__(self):
+        if self.file._file is None:
+            self.file.open()
+            self.open = True
+
+    def __exit__(self, exception_type, exception_value, exception_traceback):
+        if self.open:
+            self.file.close()
+            self.open = False
+
+
 class H5Group(MutableMapping):
     """An abstraction layer over h5py's Group objects, to manage and return data."""
-    _PROTECTED_KEYS = ('_file', '_path')
 
-    def __init__(self, group, file, path):
+    __slots__ = ['_file', '_path']
+
+    def __init__(self, file, path):
         self._file = file
         self._path = path
 
@@ -118,23 +156,27 @@ class H5Group(MutableMapping):
         return self._file._file[self._path]
 
     def __getitem__(self, key):
-        return _h5get(self._file, self._group, key, self._path)
+        with _ensure_open(self._file):
+            return _h5get(self._file, self._group, key, self._path)
 
     def __setitem__(self, key, value):
-        _h5set(self._file, self._group, key, value, self._path)
-        return value
+        with _ensure_open(self._file):
+            _h5set(self._file, self._group, _validate_key(key), value, self._path)
+            return value
 
     def __delitem__(self, key):
-        del self._group[key]
+        with _ensure_open(self._file):
+            del self._group[key]
 
     def __getattr__(self, name):
-        if name in self._group.keys():
-            return self.__getitem__(name)
-        else:
-            return getattr(self._group, name)
+        with _ensure_open(self._file):
+            if name in self._group.keys():
+                return self.__getitem__(name)
+            else:
+                return getattr(self._group, name)
 
     def __setattr__(self, key, value):
-        if key.startswith('__') or key in self.__getattribute__('_PROTECTED_KEYS'):
+        if key.startswith('__') or key in self.__slots__:
             super(H5Group, self).__setattr__(key, value)
         else:
             self.__setitem__(key, value)
@@ -142,17 +184,20 @@ class H5Group(MutableMapping):
     def __iter__(self):
         # The generator below should be refactored to use 'yield from'
         # once we drop Python 2.7 support.
-        for key in self._group.keys():
-            yield key
+        with _ensure_open(self._file):
+            for key in self._group.keys():
+                yield key
 
     def __len__(self):
-        return len(self._group)
+        with _ensure_open(self._file):
+            return len(self._group)
 
     def __eq__(self, other):
-        if type(other) == type(self):
-            return self._group == other._group
-        else:
-            return super(H5Group, self).__eq__(other)
+        with _ensure_open(self._file):
+            if type(other) == type(self):
+                return self._group == other._group
+            else:
+                return super(H5Group, self).__eq__(other)
 
 
 class H5Store(MutableMapping):
@@ -168,13 +213,19 @@ class H5Store(MutableMapping):
             assert h5s.foo == 'bar'
 
     """
-    _PROTECTED_KEYS = ('_filename', '_file')
+    __slots__ = ['_filename', '_file']
 
     def __init__(self, filename):
         if not (isinstance(filename, six.string_types) and len(filename) > 0):
             raise ValueError('H5Store filename must be a non-empty string.')
         self._filename = os.path.realpath(filename)
         self._file = None
+
+    def __repr__(self):
+        return "<{}(filename={})>".format(type(self).__name__, os.path.relpath(self._filename))
+
+    def __str__(self):
+        return "<{}(filename={})>".format(type(self).__name__, os.path.basename(self._filename))
 
     def __del__(self):
         self.close()
@@ -186,21 +237,12 @@ class H5Store(MutableMapping):
     def __exit__(self, exception_type, exception_value, exception_traceback):
         self.close()
 
-    def _ensure_open(self):
-        """Raises an error if the datastore is not open.
-
-        :raises RuntimeError: If the datastore is not open.
-        """
-        if self._file is None:
-            raise RuntimeError(
-                "To access data in an H5Store, it must be open. "
-                "Use `with` or call open() and close() explicitly.")
-
     def open(self):
         """Opens the datastore file."""
-        if self._file is None:
-            import h5py
-            self._file = h5py.File(self._filename)
+        if self._file is not None:
+            raise OSError("File '{}' is already open.".format(self))
+        import h5py
+        self._file = h5py.File(self._filename)
         return self
 
     def close(self):
@@ -216,23 +258,23 @@ class H5Store(MutableMapping):
 
     def __getitem__(self, key):
         key = key if key.startswith('/') else '/' + key
-        self._ensure_open()
-        return _h5get(self, self._file, key)
+        with _ensure_open(self):
+            return _h5get(self, self._file, key)
 
     def __setitem__(self, key, value):
-        self._ensure_open()
-        _h5set(self, self._file, _validate_key(key), value)
-        return value
+        with _ensure_open(self):
+            _h5set(self, self._file, _validate_key(key), value)
+            return value
 
     def __delitem__(self, key):
-        self._ensure_open()
-        del self._file[key]
+        with _ensure_open(self):
+            del self._file[key]
 
     def __getattr__(self, name):
         try:
             return super(H5Store, self).__getattribute__(name)
         except AttributeError:
-            if name.startswith('__') or name in self.__getattribute__('_PROTECTED_KEYS'):
+            if name.startswith('__') or name in self.__slots__:
                 raise
             try:
                 return self.__getitem__(name)
@@ -240,18 +282,22 @@ class H5Store(MutableMapping):
                 raise AttributeError(e)
 
     def __setattr__(self, key, value):
-        if key.startswith('__') or key in self.__getattribute__('_PROTECTED_KEYS'):
+        if key.startswith('__') or key in self.__slots__:
             super(H5Store, self).__setattr__(key, value)
         else:
             self.__setitem__(key, value)
 
     def __iter__(self):
-        self._ensure_open()
-        # The generator below should be refactored to use 'yield from'
-        # once we drop Python 2.7 support.
-        for key in self._file.keys():
-            yield key
+        with _ensure_open(self):
+            # The generator below should be refactored to use 'yield from'
+            # once we drop Python 2.7 support.
+            for key in self._file.keys():
+                yield key
 
     def __len__(self):
-        self._ensure_open()
-        return len(self._file)
+        with _ensure_open(self):
+            return len(self._file)
+
+    def clear(self):
+        with _ensure_open(self):
+            self._file.clear()
