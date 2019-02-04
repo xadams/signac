@@ -376,5 +376,11 @@ class H5Store(MutableMapping):
             return key in self._file
 
     def clear(self):
+        """Remove all data from this store.
+
+            .. danger::
+
+                All data will be removed, this action cannot be reversed!
+        """
         with _ensure_open(self):
             self._file.clear()
