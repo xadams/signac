@@ -1382,6 +1382,26 @@ class JobOpenDataTest(BaseJobTest):
             self.assertIn(key, dst2_job.data)
             self.assertEqual(len(dst2_job.data), 1)
 
+    def test_statepoint_copy(self):
+        job = self.open_job(dict(a=test_token, b=test_token)).init()
+        _id = job.get_id()
+        sp_copy = copy.copy(job.sp)
+        del sp_copy['b']
+        self.assertIn('a', job.sp)
+        self.assertNotIn('b', job.sp)
+        self.assertNotIn(job, self.project)
+        self.assertNotEqual(job.get_id(), _id)
+
+    def test_statepoint_deepcopy(self):
+        job = self.open_job(dict(a=test_token, b=test_token)).init()
+        _id = job.get_id()
+        sp_copy = copy.deepcopy(job.sp)
+        del sp_copy['b']
+        self.assertIn('a', job.sp)
+        self.assertIn('b', job.sp)
+        self.assertIn(job, self.project)
+        self.assertEqual(job.get_id(), _id)
+
 
 class JobClosedDataTest(JobOpenDataTest):
 
